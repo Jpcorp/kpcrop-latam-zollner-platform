@@ -8,21 +8,26 @@ Conecta cualquier CMS (WP, Presta, Shopify, etc.) con Bsale. Componentes: plugin
 - `/docs` - Documentación global (arquitectura, API, ADRs)
 
 kpcrop-latam-zollner-platform/
-├── .github/               # workflows CI/CD condicionales
-├── docs/                  # Documentación global (arquitectura, API demonio, ADRs)
-│   ├── architecture/
-│   ├── api-contracts/
-│   └── licensing/
+├── .github/
+│ └── workflows/ # CI/CD condicional
+├── docs/
+│ ├── architecture/ # Diagramas y decisiones técnicas
+│ ├── api-contracts/ # Contratos OpenAPI del demonio
+│ └── licensing/ # Gestión de licencias y flujos
 ├── packages/
-│   ├── bot-miki/           # El sincronizador automático (Node/Go/Python)
-│   ├── cms-wordpress/
-│   ├── cms-prestashop/
-│   ├── cms-shopify/
-│   ├── cms-woocommerce/
-│   ├── cms-magento/
-│   ├── cms-jumpseller/
-│   └── shared/            # Código común (validación de licencias, modelos, etc.)
-└── docker-compose.yml     # Entorno de desarrollo integrado
+│ ├── bot-miki/ # Sincronizador automático (demonio)
+│ ├── cms-wordpress/
+│ ├── cms-prestashop/
+│ ├── cms-shopify/
+│ ├── cms-woocommerce/
+│ ├── cms-magento/
+│ ├── cms-jumpseller/
+│ └── shared/ # Código común (validación, modelos)
+├── docker-compose.yml # Entorno de desarrollo integrado
+├── README.md
+└── LICENSE
 
 ## Primeros pasos
 Ver [documentación](/docs) para desarrollo local.
+
+
