@@ -1,0 +1,61 @@
+import type { FastifyInstance } from 'fastify';
+import { db } from '../infrastructure/database.js';
+import { signLicenseJwt } from '../domain/license.js';
+
+export async function licenseRoute(app: FastifyInstance) {
+  app.get<{ Querystring: { tenantId: string } }>(
+    '/license/token',
+    {
+      schema: {
+        querystring: {
+          type: 'object',
+          required: ['tenantId'],
+          properties: { tenantId: { type: 'string' } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { tenantId } = request.query;
+      const apiKey = request.headers['x-api-key'] as string | undefined;
+
+      if (!apiKey) {
+        return reply.code(401).send({ code: 'MISSING_API_KEY', message: 'Header X-API-Key requerido' });
+      }
+
+      const license = await db
+        .selectFrom('licenses')
+        .selectAll()
+        .where('tenant_id', '=', tenantId)
+        .where('api_key', '=', apiKey)
+        .executeTakeFirst();
+
+      if (!license) {
+        return reply.code(404).send({ code: 'TENANT_NOT_FOUND', message: 'Tenant no encontrado' });
+      }
+
+      if (license.status !== 'active') {
+        return reply.code(402).send({
+          code: 'LICENSE_EXPIRED',
+          message: `Licencia ${license.status}. Renueva en kpcrop.com/billing`,
+        });
+      }
+
+      const token = signLicenseJwt({
+        tenantId: license.tenant_id,
+        plan: license.plan,
+        features: license.features as string[],
+        maxStores: license.max_stores,
+      });
+
+      return reply
+        .header('Cache-Control', 'public, max-age=240')
+        .send({
+          token,
+          expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          features: license.features,
+          plan: license.plan,
+          maxStores: license.max_stores,
+        });
+    },
+  );
+}
