@@ -1,100 +1,102 @@
-# kpcrop-latam-zollner-platform
+# Documentacion — kpcrop-latam-zollner-platform
 
-> Conecta todos tus CMS con Bsale. Sincronización manual, automática y hasta _dropshipping_ entre tiendas.
-
----
-
-## 💼 ¿Qué problema resolvemos?
-
-Si usas **Bsale** (ERP/POS líder en Chile y Latinoamérica) y vendes en más de un CMS (WordPress, Shopify, PrestaShop, WooCommerce, Magento o Jumpseller), seguro has sufrido:
-
-- **Doble ingreso de datos** → errores y pérdida de tiempo.
-- **Stock inconsistente** → ventas que no puedes cumplir.
-- **Sincronización manual** cada vez que alguien compra en un canal.
-- **Falta de control** sobre licencias y actualizaciones cuando gestionas varios clientes.
+Indice de toda la documentacion tecnica del proyecto.
 
 ---
 
-## 🚀 Nuestra solución: una plataforma dual
+## Arquitectura
 
-| Componente | Función |
-|------------|---------|
-| **Plugins CMS (6 motores)** | Sincronización **manual** con un clic: productos, precios, stock, clientes y guías. |
-| **Demonio `bot-miki`** | Sincronización **automática** programable, cola de tareas, reinteligencia ante fallos de Bsale y gestión centralizada de licencias. |
-| **Plugin CMS servidor** | Configura y disponibiliza los productos de tu tienda para tus consumidores o distribuidores. Permite seleccionar productos para consignar de forma virtual. |
-| **Plugin CMS cliente** | Sincronización programable con el plugin servidor. Actúa como un sistema de **dropshipping** entre dos CMS de comercio electrónico. |
+| Documento | Descripcion |
+|---|---|
+| [Arquitectura Global](./architecture/README.md) | Vision general, tipo de arquitectura, bounded contexts, riesgos |
+| [C4 — Contexto y Contenedores](./architecture/C4-context.md) | Diagramas C4 nivel contexto y nivel contenedor |
 
-> 🔁 **Manual + Automático + Dropshipping**: Tú decides cómo y cuándo sincronizar. Sin sorpresas.
+### Flujos
 
----
-
-## 🎯 ¿Para quién es?
-
-- **Comercios** que venden en múltiples tiendas online y quieren operar sin fricción.
-- **Agencias digitales** que administran decenas de clientes y necesitan un mismo estándar de integración.
-- **Retailers** que crecen y no pueden permitirse desincronización entre Bsale y sus canales.
-- **Distribuidores / mayoristas** que quieren ofrecer catálogos a sus clientes finales mediante dropshipping automatizado.
+| Flujo | Descripcion |
+|---|---|
+| [Sync Manual](./architecture/flows/sync-manual.md) | El comercio dispara sync desde el admin del CMS |
+| [Sync Automatico](./architecture/flows/sync-auto.md) | bot-miki ejecuta syncs programadas con cola y reintentos |
+| [Dropshipping](./architecture/flows/dropshipping.md) | Catalogo compartido entre dos CMS via servi/client-dropi |
+| [Validacion de Licencias](./architecture/flows/license-validation.md) | JWT en edge, activacion, suspension, modelo de datos |
 
 ---
 
-## 💰 Modelo de negocio
+## Decisiones Tecnicas (ADR)
 
-- **Licenciamiento por volumen** – Pagas según transacciones o número de tiendas conectadas.
-- **Suscripción mensual/anual** – Incluye soporte y actualizaciones.
-- **Servicios de implementación** – Personalización para integraciones complejas.
-
----
-
-## 🏆 Ventajas competitivas
-
-| Ventaja | Beneficio |
-|---------|------------|
-| **Multi-CMS** | Cobertura total de los 6 motores más usados en la región. |
-| **Arquitectura híbrida** | Manual + automático = flexibilidad total. |
-| **Licencias centralizadas** | Control absoluto desde el demonio (ideal para agencias). |
-| **Resiliencia** | Demonio con cola y reintentos ante fallos de red o API de Bsale. |
-| **Dropshipping nativo** | Sincroniza entre dos CMS como si fueran un solo ecosistema. |
+| ADR | Titulo | Estado |
+|---|---|---|
+| [ADR-001](./adr/ADR-001-canonical-product-model.md) | Canonical Product Model — esquema unico en `shared` | Propuesto |
+| [ADR-002](./adr/ADR-002-technology-stack.md) | Stack Tecnologico completo (Node, BullMQ, PG, Railway...) | Propuesto |
+| [ADR-003](./adr/ADR-003-queue-idempotency.md) | Cola de Tareas e Idempotencia | Propuesto |
 
 ---
 
-## 📈 ¿Listo para vender sin límites?
+## Contratos de API
 
-> 👉 **Únete a la primera plataforma de sincronización Bsale que unifica todos tus canales de venta.**
-
-¿Quieres verlo en acción? **Contáctanos** para una demo o prueba gratuita.
-
-📧 `comercial@kpcrop.com` (ejemplo)  
-🌐 [www.kpcrop.com/bsale-sync](https://ejemplo.com)
+| Documento | Descripcion |
+|---|---|
+| [demonio-openapi.yaml](./api-contracts/demonio-openapi.yaml) | OpenAPI 3.1 completo de la API REST de bot-miki |
 
 ---
 
-## 📚 Documentación del proyecto
+## Licenciamiento
 
-- [Arquitectura global](/docs/architecture/README.md)
-- [Contrato API del demonio](/docs/api/demonio-openapi.yaml)
-- [ADR (Decisiones técnicas)](/docs/adr/)
-- [Guía de desarrollo de plugins](/docs/plugin-development.md)
+| Documento | Descripcion |
+|---|---|
+| [Licensing Overview](./licensing/README.md) | Planes, modelo de datos, flujos de activacion/suspension, metricas |
 
 ---
 
-## 🧱 Estructura del proyecto
-kpcrop-latam-zollner-platform/
-├── .github/workflows/ # CI/CD condicional
-├── docs/
-│ ├── architecture/ # Diagramas y doc
-│ ├── api-contracts/ # OpenAPI del demonio
-│ └── licensing/ # Flujos de licencias
-├── packages/
-│ ├── bot-miki/ # Demonio sincronizador
-│ ├── app-servi-dropi/
-│ ├── app-client-dropi/
-│ ├── cms-wordpress/
-│ ├── cms-prestashop/
-│ ├── cms-shopify/
-│ ├── cms-woocommerce/
-│ ├── cms-magento/
-│ ├── cms-jumpseller/
-│ └── shared/ # Código común
-├── docker-compose.yml
-├── README.md
-└── LICENSE
+## MVP
+
+| Documento | Descripcion |
+|---|---|
+| [Definicion del MVP](./mvp/README.md) | Scope, definition of done, orden de construccion, metricas de exito |
+
+---
+
+## Investigacion Pendiente
+
+| Documento | Descripcion |
+|---|---|
+| [Checklist Bsale API](./investigation/bsale-api-checklist.md) | Preguntas criticas sobre autenticacion, webhooks, rate limits y modelo de datos de Bsale |
+
+---
+
+## Plugins por CMS
+
+| Documento | Descripcion |
+|---|---|
+| [Plugin PrestaShop](./architecture/plugins/prestashop.md) | Estructura de modulo PHP, adapters, SQL, flujo de configuracion |
+
+---
+
+## Estructura de Archivos
+
+```
+docs/
+├── README.md                               ← este archivo
+├── architecture/
+│   ├── README.md                           ← vision general + diagrama principal
+│   ├── C4-context.md                       ← diagramas C4 nivel contexto y contenedor
+│   ├── plugins/
+│   │   └── prestashop.md                  ← diseño completo del modulo PrestaShop
+│   └── flows/
+│       ├── sync-manual.md                 ← secuencia de sync manual
+│       ├── sync-auto.md                   ← secuencia de sync automatico + reintentos
+│       ├── dropshipping.md               ← flujo dropshipping servidor/cliente
+│       └── license-validation.md        ← validacion JWT + activacion + suspension
+├── adr/
+│   ├── ADR-001-canonical-product-model.md
+│   ├── ADR-002-technology-stack.md
+│   └── ADR-003-queue-idempotency.md
+├── api-contracts/
+│   └── demonio-openapi.yaml               ← contrato OpenAPI 3.1 de bot-miki
+├── investigation/
+│   └── bsale-api-checklist.md            ← checklist de investigacion de Bsale API
+├── licensing/
+│   └── README.md                          ← planes, billing, modelo de agencias
+└── mvp/
+    └── README.md                          ← scope, DoD, roadmap, metricas
+```

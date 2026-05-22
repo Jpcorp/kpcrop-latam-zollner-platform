@@ -1,0 +1,389 @@
+openapi: 3.1.0
+
+info:
+  title: bot-miki API
+  version: 1.0.0
+  description: |
+    API REST del demonio bot-miki — el Hub central de la plataforma kpcrop-latam-zollner.
+    Provee validacion de licencias, reporte de eventos de sync, gestion de tenants,
+    y configuracion de schedules de sincronizacion automatica.
+  contact:
+    name: kpcrop-latam
+    email: dev@kpcrop.com
+
+servers:
+  - url: https://api.kpcrop.com/v1
+    description: Produccion
+  - url: https://api.staging.kpcrop.com/v1
+    description: Staging
+  - url: http://localhost:3000/v1
+    description: Desarrollo local
+
+tags:
+  - name: licenses
+    description: Validacion y gestion de licencias por tenant
+  - name: sync
+    description: Reporte de eventos de sincronizacion
+  - name: tenants
+    description: Gestion de tenants y tiendas conectadas
+  - name: schedules
+    description: Configuracion de syncs automaticos por tenant
+  - name: health
+    description: Estado del servicio
+
+# ─────────────────────────────────────────────
+# SECURITY
+# ─────────────────────────────────────────────
+security:
+  - apiKeyAuth: []
+
+components:
+  securitySchemes:
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API Key del tenant. Se genera al activar la licencia.
+
+  # ─── SCHEMAS ───────────────────────────────
+  schemas:
+
+    Error:
+      type: object
+      required: [code, message]
+      properties:
+        code:    { type: string, example: "LICENSE_EXPIRED" }
+        message: { type: string, example: "La licencia del tenant esta expirada." }
+        details: { type: object }
+
+    LicenseToken:
+      type: object
+      required: [token, expiresAt, features]
+      properties:
+        token:
+          type: string
+          description: JWT firmado con TTL de 5 minutos. El plugin CMS lo cachea localmente.
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        expiresAt:
+          type: string
+          format: date-time
+          example: "2026-05-22T14:05:00Z"
+        features:
+          type: array
+          items: { type: string }
+          example: ["sync_auto", "sync_manual", "dropshipping"]
+        plan:
+          type: string
+          enum: [starter, growth, agency]
+          example: "growth"
+        maxStores:
+          type: integer
+          example: 5
+
+    SyncReport:
+      type: object
+      required: [tenantId, syncType, entityType, status]
+      properties:
+        tenantId:
+          type: string
+          example: "acme-store"
+        syncType:
+          type: string
+          enum: [manual, auto, dropshipping]
+        entityType:
+          type: string
+          enum: [products, prices, stock, clients, orders, guides]
+        status:
+          type: string
+          enum: [success, partial, failed]
+        recordsUpdated:
+          type: integer
+          example: 142
+        durationMs:
+          type: integer
+          example: 3240
+        errorMessage:
+          type: string
+          nullable: true
+        idempotencyKey:
+          type: string
+          description: Clave unica del job. Si se envia, se usa para deduplicacion en la DLQ.
+          example: "acme-store:manual:products:2026-05-22T14:35"
+
+    Tenant:
+      type: object
+      required: [tenantId, plan, status, stores]
+      properties:
+        tenantId:  { type: string, example: "acme-store" }
+        plan:      { type: string, enum: [starter, growth, agency] }
+        status:    { type: string, enum: [active, suspended, cancelled] }
+        stores:
+          type: array
+          items: { $ref: '#/components/schemas/Store' }
+        syncStats:
+          $ref: '#/components/schemas/SyncStats'
+
+    Store:
+      type: object
+      required: [storeId, cmsType, cmsUrl]
+      properties:
+        storeId:            { type: string, format: uuid }
+        storeName:          { type: string, example: "Tienda Principal" }
+        cmsType:
+          type: string
+          enum: [wordpress, prestashop, shopify, woocommerce, magento, jumpseller]
+        cmsUrl:             { type: string, format: uri, example: "https://mitienda.cl" }
+        bsaleIntegrationId: { type: integer, example: 42 }
+        lastSyncAt:         { type: string, format: date-time, nullable: true }
+
+    SyncStats:
+      type: object
+      properties:
+        totalSyncs:    { type: integer, example: 1842 }
+        successRate:   { type: number, format: float, example: 0.987 }
+        avgDurationMs: { type: integer, example: 2100 }
+        lastSyncAt:    { type: string, format: date-time }
+        syncLagMs:
+          type: integer
+          description: Tiempo promedio desde cambio en Bsale hasta reflejo en CMS (ms)
+          example: 4200
+
+    Schedule:
+      type: object
+      properties:
+        products: { type: string, description: "Cron expression", example: "0 * * * *" }
+        prices:   { type: string, example: "*/30 * * * *" }
+        stock:    { type: string, example: "*/15 * * * *" }
+        clients:  { type: string, example: "0 2 * * *" }
+        orders:   { type: string, example: "*/5 * * * *" }
+
+# ─────────────────────────────────────────────
+# PATHS
+# ─────────────────────────────────────────────
+paths:
+
+  # ─── HEALTH ──────────────────────────────────
+  /health:
+    get:
+      tags: [health]
+      summary: Estado del servicio
+      security: []
+      responses:
+        '200':
+          description: Servicio operativo
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:  { type: string, example: "ok" }
+                  version: { type: string, example: "1.0.0" }
+                  uptime:  { type: integer, example: 86400 }
+
+  # ─── LICENSES ────────────────────────────────
+  /license/token:
+    get:
+      tags: [licenses]
+      summary: Obtener token de licencia (JWT)
+      description: |
+        El plugin CMS llama a este endpoint para obtener un JWT firmado que valida su licencia.
+        El JWT debe ser cacheado localmente por el plugin por hasta 4 minutos.
+        Cloudflare cachea la respuesta en el edge por 4 minutos.
+      parameters:
+        - in: query
+          name: tenantId
+          required: true
+          schema: { type: string }
+          example: "acme-store"
+      responses:
+        '200':
+          description: Token de licencia valido
+          headers:
+            Cache-Control:
+              schema: { type: string, example: "public, max-age=240" }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LicenseToken' }
+        '402':
+          description: Licencia expirada o suspendida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                code: "LICENSE_EXPIRED"
+                message: "La licencia del tenant acme-store esta expirada. Renueva en kpcrop.com/billing"
+        '404':
+          description: Tenant no encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ─── SYNC REPORT ──────────────────────────────
+  /sync/report:
+    post:
+      tags: [sync]
+      summary: Reportar evento de sincronizacion
+      description: |
+        Los plugins CMS reportan el resultado de cada sync (manual o automatico).
+        Este endpoint es fire-and-forget — el plugin no debe esperar ni reintentar si falla.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SyncReport' }
+      responses:
+        '204':
+          description: Evento registrado
+        '400':
+          description: Payload invalido
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /sync/events:
+    get:
+      tags: [sync]
+      summary: Historial de eventos de sync del tenant
+      parameters:
+        - in: query
+          name: tenantId
+          required: true
+          schema: { type: string }
+        - in: query
+          name: storeId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: status
+          schema: { type: string, enum: [success, partial, failed, skipped] }
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        '200':
+          description: Lista de eventos
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  total: { type: integer }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SyncReport' }
+
+  # ─── TENANTS ──────────────────────────────────
+  /tenants/{tenantId}:
+    get:
+      tags: [tenants]
+      summary: Obtener informacion del tenant
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Tenant encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+        '404':
+          description: Tenant no encontrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /tenants/{tenantId}/stores:
+    post:
+      tags: [tenants]
+      summary: Agregar tienda al tenant
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cmsType, cmsUrl]
+              properties:
+                storeName:          { type: string }
+                cmsType:
+                  type: string
+                  enum: [wordpress, prestashop, shopify, woocommerce, magento, jumpseller]
+                cmsUrl:             { type: string, format: uri }
+                bsaleIntegrationId: { type: integer }
+      responses:
+        '201':
+          description: Tienda creada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Store' }
+        '402':
+          description: Limite de tiendas del plan alcanzado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  # ─── SCHEDULES ────────────────────────────────
+  /tenants/{tenantId}/schedules:
+    get:
+      tags: [schedules]
+      summary: Obtener configuracion de schedules del tenant
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Configuracion actual
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+
+    put:
+      tags: [schedules]
+      summary: Actualizar configuracion de schedules
+      description: Reemplaza la configuracion de cron de sync automatico del tenant.
+      parameters:
+        - in: path
+          name: tenantId
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Schedule' }
+      responses:
+        '200':
+          description: Configuracion actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Schedule' }
+        '400':
+          description: Expresion cron invalida
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '402':
+          description: El plan del tenant no incluye sync automatico
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                code: "FEATURE_NOT_INCLUDED"
+                message: "El plan Starter no incluye sync automatico. Actualiza a Growth."
