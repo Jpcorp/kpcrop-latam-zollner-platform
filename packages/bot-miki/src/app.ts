@@ -1,11 +1,13 @@
 import Fastify from 'fastify';
+import type { Queue } from 'bullmq';
 import { config } from './config.js';
 import { healthRoute } from './routes/health.js';
 import { licenseRoute } from './routes/license.js';
 import { syncReportRoute } from './routes/sync-report.js';
 import { webhooksRoute } from './routes/webhooks.js';
+import type { SyncJobData } from './workers/sync-worker.js';
 
-export function buildApp() {
+export function buildApp(syncQueue: Queue<SyncJobData>) {
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
@@ -18,7 +20,7 @@ export function buildApp() {
   app.register(healthRoute);
   app.register(licenseRoute,    { prefix: '/v1' });
   app.register(syncReportRoute, { prefix: '/v1' });
-  app.register(webhooksRoute,   { prefix: '/v1' });
+  app.register(webhooksRoute,   { prefix: '/v1', queue: syncQueue });
 
   return app;
 }

@@ -1,8 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { Queue } from 'bullmq';
 import { db } from '../infrastructure/database.js';
-import { config } from '../config.js';
-import IORedis from 'ioredis';
+import type { SyncJobData } from '../workers/sync-worker.js';
 
 interface BsaleWebhookPayload {
   cpnId: number;
@@ -13,17 +12,8 @@ interface BsaleWebhookPayload {
   send: number;           // unix timestamp
 }
 
-let syncQueue: Queue | null = null;
-
-function getQueue(): Queue {
-  if (!syncQueue) {
-    const redis = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null });
-    syncQueue = new Queue('sync', { connection: redis });
-  }
-  return syncQueue;
-}
-
-export async function webhooksRoute(app: FastifyInstance) {
+export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<SyncJobData> }) {
+  const { queue } = opts;
   app.post<{ Body: BsaleWebhookPayload }>(
     '/webhooks/bsale',
     {
@@ -70,7 +60,7 @@ export async function webhooksRoute(app: FastifyInstance) {
 
       // Encolar job — el worker hace la segunda llamada a Bsale para obtener datos completos
       const idempotencyKey = `webhook:${store.id}:${payload.topic}:${payload.resourceId}:${payload.send}`;
-      await getQueue().add(
+      await queue.add(
         'bsale-webhook',
         {
           storeId:     store.id,

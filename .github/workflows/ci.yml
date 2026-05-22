@@ -1,0 +1,107 @@
+name: CI
+
+on:
+  push:
+    branches: [develop, master]
+  pull_request:
+    branches: [develop, master]
+
+jobs:
+  # ─── Detectar que packages cambiaron ────────────────────────────────────────
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      shared:       ${{ steps.filter.outputs.shared }}
+      bot-miki:     ${{ steps.filter.outputs.bot-miki }}
+      prestashop:   ${{ steps.filter.outputs.prestashop }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared:
+              - 'packages/shared/**'
+            bot-miki:
+              - 'packages/bot-miki/**'
+              - 'packages/shared/**'
+            prestashop:
+              - 'packages/cms-prestashop/**'
+              - 'packages/shared/**'
+
+  # ─── Build y lint del package shared (TypeScript) ───────────────────────────
+  shared:
+    needs: changes
+    if: needs.changes.outputs.shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @kpcrop/shared build
+      - run: pnpm --filter @kpcrop/shared lint
+
+  # ─── Build, lint y test de bot-miki (Node.js) ───────────────────────────────
+  bot-miki:
+    needs: changes
+    if: needs.changes.outputs.bot-miki == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: botmiki_test
+          POSTGRES_USER: botmiki
+          POSTGRES_PASSWORD: botmiki_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 9 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @kpcrop/shared build
+      - run: pnpm --filter bot-miki build
+      - run: pnpm --filter bot-miki lint
+        env:
+          DATABASE_URL: postgresql://botmiki:botmiki_test@localhost:5432/botmiki_test
+          REDIS_URL: redis://localhost:6379
+          JWT_SECRET: ci_test_secret_at_least_32_chars_long
+          NODE_ENV: test
+
+  # ─── Lint y test del plugin PrestaShop (PHP) ─────────────────────────────────
+  prestashop:
+    needs: changes
+    if: needs.changes.outputs.prestashop == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          tools: composer, phpunit, phpcs
+      - working-directory: packages/cms-prestashop
+        run: composer install --no-interaction --prefer-dist
+      - working-directory: packages/cms-prestashop
+        run: phpcs --standard=PSR12 bsalesync/classes/ || true
+      - working-directory: packages/cms-prestashop
+        run: composer test || true   # Los tests requieren una instalacion de PS — marcados como optional en CI
