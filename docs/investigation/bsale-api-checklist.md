@@ -1,16 +1,8 @@
 # Checklist de Investigacion — Bsale API
 
-Antes de disenar el sync automatico, estas preguntas deben tener respuesta documentada.
-El costo de no saberlas es disenar la arquitectura incorrecta y reescribir despues.
-
----
-
-## Como obtener respuestas
-
-1. **Documentacion oficial:** [https://developers.bsale.cl](https://developers.bsale.cl)
-2. **Sandbox:** Solicitar credenciales de prueba al equipo de Bsale (soporte@bsale.cl)
-3. **Pruebas directas:** Usar Postman o `curl` con credenciales de sandbox
-4. **Comunidad:** Foro de desarrolladores Bsale / Slack si existe
+**Completado:** 2026-05-22 (investigacion publica — sin sandbox aun)  
+**Hallazgos detallados:** [bsale-api-findings.md](./bsale-api-findings.md)  
+**Leyenda:** ✅ Confirmado | ⚠️ Parcial / con limitacion | ❌ No existe | ❓ Sin documentar
 
 ---
 
@@ -18,40 +10,36 @@ El costo de no saberlas es disenar la arquitectura incorrecta y reescribir despu
 
 | # | Pregunta | Respuesta | Impacto |
 |---|---|---|---|
-| 1.1 | ¿Que tipo de autenticacion usa la API? (OAuth2, API Key, Basic Auth) | | Determina como el plugin guarda y rota credenciales |
-| 1.2 | ¿Los tokens tienen expiracion? ¿Cuanto tiempo duran? | | Si expiran, el plugin necesita logica de refresh automatico |
-| 1.3 | ¿Hay un token por empresa o por usuario? | | Afecta el modelo de datos de configuracion por tenant |
-| 1.4 | ¿Se puede revocar un token programaticamente? | | Necesario para cuando un cliente cancela la integracion |
-| 1.5 | ¿Existe un ambiente de sandbox/pruebas separado de produccion? | | Sin sandbox, todo desarrollo requiere datos reales — alto riesgo |
+| 1.1 | ¿Tipo de autenticacion? | ✅ API Key en header `access_token` + OAuth 2.0 disponible | OAuth 2.0 es el camino para multi-tenant (bot-miki gestiona N clientes) |
+| 1.2 | ¿Los tokens expiran? | ❓ No documentado — probable vida larga sin rotacion | Confirmar con ayuda@bsale.app antes de decidir estrategia de refresh |
+| 1.3 | ¿Token por empresa o por usuario? | ✅ Por empresa (cpnId) — un token = una empresa Bsale | Cada tenant almacena su propio token en la tabla de configuracion del demonio |
+| 1.4 | ¿Se puede revocar via API? | ❓ No documentado — probablemente solo via panel Bsale | Riesgo bajo para MVP; documentar como proceso manual |
+| 1.5 | ¿Existe sandbox? | ✅ SI — `account.bsale.dev/users/create`, listo en < 1 min | Desarrollar 100% en sandbox antes de tocar datos reales de un cliente |
 
 ---
 
-## Bloque 2 — Webhooks (decision arquitectonica critica)
+## Bloque 2 — Webhooks
 
-> Esta es la pregunta mas importante. La respuesta cambia el costo de construir sync automatico en un factor de 5.
+> **Conclusion: SI existen webhooks.** La arquitectura reactiva es viable.
 
 | # | Pregunta | Respuesta | Impacto |
 |---|---|---|---|
-| 2.1 | ¿Bsale soporta webhooks? ¿Para que eventos? | | Con webhooks: sync reactivo. Sin webhooks: polling obligatorio |
-| 2.2 | Si hay webhooks, ¿que eventos disparan? (producto creado, precio actualizado, stock modificado, orden confirmada...) | | Determina que entidades se pueden sincronizar en tiempo real |
-| 2.3 | ¿Los webhooks incluyen el payload completo del objeto o solo el ID? | | Si solo incluyen ID, hay que hacer una segunda llamada para obtener el dato |
-| 2.4 | ¿Bsale reintenta el webhook si el receptor no responde? ¿Cuantas veces? ¿Con que backoff? | | El demonio debe ser idempotente si Bsale reintenta |
-| 2.5 | ¿Los webhooks se configuran por empresa o son globales? | | Cada tenant necesita su propia URL de webhook registrada |
-| 2.6 | ¿Hay algun mecanismo de firma/verificacion del webhook (HMAC, secret)? | | Necesario para validar que el webhook viene realmente de Bsale |
+| 2.1 | ¿Bsale soporta webhooks? | ✅ SI — sistema documentado y en produccion | Arquitectura REACTIVA viable como canal primario |
+| 2.2 | ¿Que eventos disparan? | ✅ `product`, `variant`, `stock`, `price`, `document`, `document_paid`, `checkout`, `purchase_document`, `rcof` | Los topics relevantes para sync CMS: product, variant, stock, price |
+| 2.3 | ¿El payload incluye datos completos o solo el ID? | ⚠️ **Solo metadata** — `{resourceId, resource, topic, action}` | Cada webhook = 1 llamada adicional a la API para obtener el objeto. Dobla el consumo de rate limits |
+| 2.4 | ¿Bsale reintenta el webhook si falla? | ❓ No documentado | Asumir que NO reintenta — implementar polling horario como fallback obligatorio |
+| 2.5 | ¿Los webhooks se configuran por empresa? | ✅ SI, por `cpnId` — cada empresa elige URL y topics | Cada nuevo tenant requiere configuracion en Bsale |
+| 2.6 | ¿Hay firma/verificacion del payload? | ❌ No documentada | Riesgo de spoofing — mitigar validando el `resource` contra api.bsale.io antes de procesar |
 
-### Decision segun resultado
+### ⚠️ Friction Point Critico: Registro de Webhooks es Manual
 
+**No hay API para registrar webhooks.** El proceso es enviar email a `ayuda@bsale.app` con la URL y el `cpnId` del cliente. Esto significa que **cada nuevo cliente requiere una accion manual** para activar el sync automatico.
+
+**Estrategia recomendada:**
 ```
-Si Bsale tiene webhooks completos (2.1 = SI, 2.2 cubre productos/stock/precios):
-  → Arquitectura REACTIVA: Bsale notifica → demonio sincroniza inmediatamente
-  → Sync automatico = receptor de webhooks + cola de procesamiento
-  → Sync lag < 30 segundos
-
-Si Bsale NO tiene webhooks o son parciales:
-  → Arquitectura POLLING: demonio consulta Bsale cada N minutos por tenant
-  → Requiere endpoint GET /products?updated_since={timestamp} en Bsale
-  → Sync lag = frecuencia de polling (ej: 15 minutos)
-  → Mayor presion sobre rate limits de Bsale
+Tier Starter (MVP):    Sin webhooks → polling manual por el cliente (cron en su servidor)
+Tier Growth:           Con webhooks → kpcrop gestiona el alta via email a Bsale por el cliente
+Tier Agency (futuro):  Negociar acuerdo con Bsale para registro programatico de webhooks via API
 ```
 
 ---
@@ -60,55 +48,60 @@ Si Bsale NO tiene webhooks o son parciales:
 
 | # | Pregunta | Respuesta | Impacto |
 |---|---|---|---|
-| 3.1 | ¿Bsale tiene rate limiting en su API? | | Si no hay limite documentado, hay un limite implicito — hay que medirlo |
-| 3.2 | ¿Cuantas requests por minuto/hora permite por empresa? | | Determina la frecuencia maxima de polling y la concurrencia del demonio |
-| 3.3 | ¿El rate limit es por API Key o por IP? | | Si es por IP, el demonio compartido tiene un solo pool de requests para todos los tenants |
-| 3.4 | ¿Que codigo HTTP devuelve al superar el limite? ¿Incluye header `Retry-After`? | | Necesario para implementar backoff correcto en la cola de reintentos |
-| 3.5 | ¿Hay rate limits distintos segun el plan de Bsale del cliente? | | Un tenant con plan basico puede tener menos requests que uno enterprise |
+| 3.1 | ¿Bsale tiene rate limiting? | ❓ No documentado — probablemente existe | Implementar rate limiter propio de 10 req/s como medida conservadora |
+| 3.2 | ¿Cuantas requests por minuto/hora? | ❓ Sin documentar — medir en sandbox | Pendiente de medicion empirica en sandbox |
+| 3.3 | ¿Rate limit por API Key o por IP? | ❓ Sin documentar | Si es por IP, el demonio comparte el pool entre todos los tenants — alto riesgo |
+| 3.4 | ¿Codigo HTTP al superar el limite? ¿Header `Retry-After`? | ❓ Presumiblemente 429 — sin confirmar | Implementar manejo de 429 con backoff exponencial desde el inicio |
+| 3.5 | ¿Rate limits distintos por plan Bsale del cliente? | ❓ Sin documentar | Considerar implementar colas separadas por plan en BullMQ |
 
-### Calculo de presion sobre rate limits (completar con respuesta de 3.2)
-
-```
-Tenants activos: N
-Frecuencia de sync: cada 15 min = 4 veces/hora
-Endpoints por sync: ~3 (products, prices, stock)
-Requests por hora por tenant: 4 × 3 = 12
-
-Requests totales por hora: N × 12
-
-Si rate limit es 1000 req/hora → maximo sostenible: 83 tenants activos
-Si rate limit es 10000 req/hora → maximo sostenible: 833 tenants activos
-```
+**Accion inmediata:** Medir rate limits empiricamente en sandbox con script de carga. Tambien preguntar a ayuda@bsale.app.
 
 ---
 
 ## Bloque 4 — Endpoints Disponibles
 
-| # | Entidad | Endpoint GET (listar) | Filtro por fecha? | Paginacion? |
+| # | Entidad | Endpoint GET | Filtro por fecha | Paginacion |
 |---|---|---|---|---|
-| 4.1 | Productos | `/v1/products` | ¿`updated_since`? | ¿`offset`/`limit`? |
-| 4.2 | Precios / Listas de precio | `/v1/price_lists` | ¿? | ¿? |
-| 4.3 | Stock por sucursal | `/v1/stocks` | ¿? | ¿? |
-| 4.4 | Clientes | `/v1/clients` | ¿? | ¿? |
-| 4.5 | Ordenes / Ventas | `/v1/sales` | ¿? | ¿? |
-| 4.6 | Guias de despacho | `/v1/shippings` | ¿? | ¿? |
-| 4.7 | Imagenes de productos | ¿Incluidas en producto o endpoint separado? | — | — |
-| 4.8 | Variantes de productos | ¿Incluidas en producto o endpoint separado? | — | — |
+| 4.1 | Productos | ✅ `GET /v1/products.json` | ❌ **NO existe `updated_since`** | limit 50, offset |
+| 4.2 | Variantes | ✅ `GET /v1/products/{id}/variants.json` o `expand=variants` | ❌ NO | limit 50, offset |
+| 4.3 | Stock | ✅ `GET /v1/stocks.json` (filtro por `officeid`, `variantid`) | ❌ NO | limit 50, offset |
+| 4.4 | Listas de precio | ✅ `GET /v1/price_lists.json` y `/v1/price_lists/{id}/details.json` | ❌ NO | limit 50, offset |
+| 4.5 | Clientes | ✅ `GET /v1/clients.json` | ❓ No confirmado | limit 50, offset |
+| 4.6 | Ventas/Documentos | ✅ `GET /v1/documents.json` | ✅ SI (`emissiondaterange`) | limit 50, offset |
+| 4.7 | Imagenes | ✅ Via `expand=images` en producto | — | Incluidas en la respuesta |
+| 4.8 | Variantes con stock y precio | ✅ `expand=variants` + `expand=stock` + `expand=prices` | ❌ NO | Incluidas en la respuesta |
 
-> **Critico:** Si no hay filtro `updated_since`, el demonio debe descargar TODOS los productos en cada sync y comparar localmente — orden de magnitud mas lento y costoso en rate limits.
+### ⚠️ Hallazgo Critico: Sin Filtro de Fecha en Productos
+
+El endpoint de productos **no soporta** `updated_since`, `lastmodified`, ni ningun filtro por fecha de modificacion.
+
+**Consecuencia para polling:** El demonio debe descargar el catalogo COMPLETO en cada ciclo de polling y comparar localmente para detectar cambios. Para 1000 productos con `limit=50`: **20 llamadas por tenant por ciclo de polling**.
+
+**Por esto los webhooks son prioritarios sobre el polling.**
+
+**Optimizacion disponible:** Usar `expand=variants` para obtener variantes e imagenes en una sola llamada en lugar de N llamadas separadas:
+```
+GET /v1/products.json?expand=[variants,images]&limit=50&offset=0
+```
 
 ---
 
-## Bloque 5 — Escritura (el demonio tambien escribe en Bsale?)
-
-> La plataforma actualmente diseña sync Bsale → CMS. Pero algunos casos requieren escritura inversa.
+## Bloque 5 — Escritura en Bsale
 
 | # | Pregunta | Respuesta |
 |---|---|---|
-| 5.1 | ¿Hay endpoint para crear/actualizar clientes en Bsale desde el CMS? | |
-| 5.2 | ¿Hay endpoint para crear ordenes/ventas en Bsale cuando se vende en el CMS? | |
-| 5.3 | ¿La API de escritura es idempotente? (si se llama dos veces con los mismos datos, ¿crea duplicados?) | |
-| 5.4 | ¿Existe un campo de referencia externa (external_id) para evitar duplicados al crear entidades? | |
+| 5.1 | ¿Crear/actualizar clientes via API? | ✅ SI — `POST /v1/clients.json`, `PUT /v1/clients/{id}.json` |
+| 5.2 | ¿Crear ordenes/ventas via API? | ✅ SI — `POST /v1/documents.json` (boletas, facturas) |
+| 5.3 | ¿La escritura es idempotente? | ❓ No documentado — asumir que NO. Implementar deduplicacion propia |
+| 5.4 | ¿Existe campo `external_id`? | ❌ No documentado — usar campo `number` del documento como referencia externa |
+
+**Estrategia de deduplicacion para documentos:**
+```
+Antes de POST /v1/documents.json:
+  → GET /v1/documents.json?number={id_orden_cms}
+  → Si existe → no crear, registrar referencia
+  → Si no existe → crear documento
+```
 
 ---
 
@@ -116,31 +109,36 @@ Si rate limit es 10000 req/hora → maximo sostenible: 833 tenants activos
 
 | # | Pregunta | Respuesta |
 |---|---|---|
-| 6.1 | ¿El campo `code` de producto es unico por empresa? ¿O puede repetirse? | Clave de idempotencia en todos los CMS |
-| 6.2 | ¿Como representa Bsale las variantes? ¿Productos separados o atributos del mismo producto? | Afecta el Canonical Product Model |
-| 6.3 | ¿Bsale maneja multiples sucursales con stock independiente? | Si el cliente tiene varias sucursales, ¿que stock sincronizamos al CMS? |
-| 6.4 | ¿Los precios en Bsale son netos o brutos? ¿Incluyen IVA? | El CMS del cliente puede operar de forma distinta |
-| 6.5 | ¿Hay multiples listas de precios por empresa? | El plugin debe permitir elegir que lista de precios sincronizar |
-| 6.6 | ¿Las imagenes de productos estan hosteadas en Bsale o son URLs externas? | Si son de Bsale, pueden expirar o cambiar de URL |
+| 6.1 | ¿El `code` del producto es unico por empresa? | ✅ El `code` vive en la **variante** (no en el producto). Es el SKU — unico por empresa |
+| 6.2 | ¿Como representa Bsale las variantes? | ✅ Producto es contenedor logico; variante tiene stock, precio, SKU y atributos |
+| 6.3 | ¿Multiples sucursales con stock independiente? | ✅ SI — filtro por `officeid`. El cliente debe elegir que sucursal sincronizar |
+| 6.4 | ¿Precios netos o brutos? | ✅ **NETOS (sin IVA).** IVA calculado aparte (tipicamente 19% Chile) |
+| 6.5 | ¿Multiples listas de precios? | ✅ SI — N listas por empresa. El plugin debe permitir elegir la lista a sincronizar |
+| 6.6 | ¿Imagenes hosteadas en Bsale? | ✅ SI — CDN de Bsale (`resources.bsale.cl`). URLs persistentes pero pueden cambiar si el cliente reemplaza la imagen |
 
 ---
 
-## Resultado Esperado
+## Decision Arquitectonica Resultante
 
-Al completar este checklist, documentar las respuestas aqui mismo y crear:
+```
+ARQUITECTURA HIBRIDA: Webhooks (primario) + Polling (fallback)
 
-- `docs/investigation/bsale-api-findings.md` con los hallazgos
-- Actualizar `docs/adr/ADR-004-sync-strategy.md` con la decision: **reactivo (webhooks) vs polling**
-- Actualizar el diagrama de flujo `docs/architecture/flows/sync-auto.md` segun la estrategia elegida
+Primario  → Webhooks Bsale → bot-miki → encolar job → sync al CMS     (lag < 30s)
+Fallback  → Polling cada 60 min → detectar inconsistencias             (lag < 60 min)
+Onboarding→ Manual via email a Bsale por cada nuevo cliente en tier Growth+
+```
+
+Ver [ADR-004](../adr/ADR-004-sync-strategy.md) para la decision completa.
 
 ---
 
-## Tiempo Estimado de Investigacion
+## Preguntas Pendientes para ayuda@bsale.app
 
-| Actividad | Tiempo |
-|---|---|
-| Leer documentacion oficial Bsale | 2-4 horas |
-| Solicitar y configurar sandbox | 1-2 dias (depende de Bsale) |
-| Pruebas con Postman / curl | 4-8 horas |
-| Documentar hallazgos | 2 horas |
-| **Total** | **2-4 dias habiles** |
+Enviar email con estas preguntas antes de comenzar desarrollo del sync automatico:
+
+1. ¿Los `access_token` tienen fecha de expiracion? Si expiran, ¿como se renuevan?
+2. ¿Cual es el rate limit de requests por empresa? ¿Es por API Key o por IP?
+3. ¿Bsale reintenta los webhooks si el receptor devuelve error o no responde?
+4. ¿Es posible registrar y gestionar URLs de webhook via API REST (sin email)?
+5. ¿Existe un campo `external_id` o equivalente al crear documentos para evitar duplicados?
+6. ¿El parametro `expand=variants` en `GET /v1/products.json` devuelve las variantes de cada producto en la misma respuesta paginada?

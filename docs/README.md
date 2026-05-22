@@ -29,6 +29,7 @@ Indice de toda la documentacion tecnica del proyecto.
 | [ADR-001](./adr/ADR-001-canonical-product-model.md) | Canonical Product Model — esquema unico en `shared` | Propuesto |
 | [ADR-002](./adr/ADR-002-technology-stack.md) | Stack Tecnologico completo (Node, BullMQ, PG, Railway...) | Propuesto |
 | [ADR-003](./adr/ADR-003-queue-idempotency.md) | Cola de Tareas e Idempotencia | Propuesto |
+| [ADR-004](./adr/ADR-004-sync-strategy.md) | Estrategia de Sync: Webhooks + Polling Hibrido | Propuesto |
 
 ---
 
@@ -56,11 +57,12 @@ Indice de toda la documentacion tecnica del proyecto.
 
 ---
 
-## Investigacion Pendiente
+## Investigacion Bsale API
 
 | Documento | Descripcion |
 |---|---|
-| [Checklist Bsale API](./investigation/bsale-api-checklist.md) | Preguntas criticas sobre autenticacion, webhooks, rate limits y modelo de datos de Bsale |
+| [Checklist Bsale API](./investigation/bsale-api-checklist.md) | Preguntas respondidas sobre autenticacion, webhooks, rate limits y modelo de datos |
+| [Hallazgos Bsale API](./investigation/bsale-api-findings.md) | Analisis detallado con evidencia, implicaciones y preguntas pendientes para Bsale |
 
 ---
 
