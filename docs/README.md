@@ -1,54 +1,59 @@
-# Documentación del proyecto
+# kpcrop-latam-zollner-platform
 
-## 💼 ¿Qué problema resuelve esta plataforma?
+> Conecta todos tus CMS con Bsale. Sincronización manual, automática y hasta _dropshipping_ entre tiendas.
 
-Si usas **Bsale** y vendes en más de un CMS (WordPress, Shopify, PrestaShop, WooCommerce, Magento o Jumpseller), sabes el dolor de cabeza que es mantener productos, stock, clientes y guías sincronizados.
+---
 
-**Sin nuestra plataforma:**  
-- Doble ingreso de datos → errores y pérdida de tiempo.  
-- Stock inconsistente → ventas que no pueden cumplirse.  
-- Sincronización manual cada vez que alguien compra en un canal.  
+## 💼 ¿Qué problema resolvemos?
 
-**Con nuestra plataforma:**  
-- Un solo sistema que conecta **todos tus CMS** con **Bsale** automática o manualmente.  
-- Demonio inteligente que orquesta la sincronización 24/7, con cola y reintentos.  
-- Gestión centralizada de licencias y actualizaciones.
+Si usas **Bsale** (ERP/POS líder en Chile y Latinoamérica) y vendes en más de un CMS (WordPress, Shopify, PrestaShop, WooCommerce, Magento o Jumpseller), seguro has sufrido:
+
+- **Doble ingreso de datos** → errores y pérdida de tiempo.
+- **Stock inconsistente** → ventas que no puedes cumplir.
+- **Sincronización manual** cada vez que alguien compra en un canal.
+- **Falta de control** sobre licencias y actualizaciones cuando gestionas varios clientes.
+
+---
+
+## 🚀 Nuestra solución: una plataforma dual
+
+| Componente | Función |
+|------------|---------|
+| **Plugins CMS (6 motores)** | Sincronización **manual** con un clic: productos, precios, stock, clientes y guías. |
+| **Demonio `bot-miki`** | Sincronización **automática** programable, cola de tareas, reinteligencia ante fallos de Bsale y gestión centralizada de licencias. |
+| **Plugin CMS servidor** | Configura y disponibiliza los productos de tu tienda para tus consumidores o distribuidores. Permite seleccionar productos para consignar de forma virtual. |
+| **Plugin CMS cliente** | Sincronización programable con el plugin servidor. Actúa como un sistema de **dropshipping** entre dos CMS de comercio electrónico. |
+
+> 🔁 **Manual + Automático + Dropshipping**: Tú decides cómo y cuándo sincronizar. Sin sorpresas.
 
 ---
 
 ## 🎯 ¿Para quién es?
 
-- **Comercios** que venden en múltiples tiendas online y quieren operar sin fricción.  
-- **Agencias digitales** que administran decenas de clientes y necesitan un mismo estándar de integración.  
-- **Retailers** que crecen y no pueden permitirse desync entre Bsale y sus canales.
+- **Comercios** que venden en múltiples tiendas online y quieren operar sin fricción.
+- **Agencias digitales** que administran decenas de clientes y necesitan un mismo estándar de integración.
+- **Retailers** que crecen y no pueden permitirse desincronización entre Bsale y sus canales.
+- **Distribuidores / mayoristas** que quieren ofrecer catálogos a sus clientes finales mediante dropshipping automatizado.
 
 ---
 
-## 🚀 Lo que ofrecemos
+## 💰 Modelo de negocio
 
-| Componente | Función |
-|------------|---------|
-| **Plugins CMS** (6 motores) | Sincronización **manual**: un clic y actualizas productos, stock, clientes o guías. |
-| **Demonio `bot-miki`** | Sincronización **automática** programable, cola de tareas, reinteligencia ante fallos y gestión de licencias. |
-
-> 🔁 **Manual + Automático**: El comercio decide cuándo y cómo sincronizar. Sin sorpresas.
-
----
-
-## 💰 Modelo de negocio (simple, escalable, justo)
-
-- **Suscripción por volumen** – Pagas según la cantidad de transacciones o tiendas conectadas.  
-- **Plan por CMS** – Ideal para agencias que quieren licenciar por cliente.  
-- **Soporte y actualizaciones incluidas** – Sin letras chicas.
+- **Licenciamiento por volumen** – Pagas según transacciones o número de tiendas conectadas.
+- **Suscripción mensual/anual** – Incluye soporte y actualizaciones.
+- **Servicios de implementación** – Personalización para integraciones complejas.
 
 ---
 
 ## 🏆 Ventajas competitivas
 
-- 🧩 **Multi-CMS**: Cobertura total de los líderes del mercado.  
-- ⚙️ **Arquitectura híbrida**: Lo mejor del mundo manual y automático.  
-- 🔐 **Licencias centralizadas**: Controla todo desde el demonio.  
-- 📦 **Resiliente**: Reintentos automáticos si Bsale o la red fallan.
+| Ventaja | Beneficio |
+|---------|------------|
+| **Multi-CMS** | Cobertura total de los 6 motores más usados en la región. |
+| **Arquitectura híbrida** | Manual + automático = flexibilidad total. |
+| **Licencias centralizadas** | Control absoluto desde el demonio (ideal para agencias). |
+| **Resiliencia** | Demonio con cola y reintentos ante fallos de red o API de Bsale. |
+| **Dropshipping nativo** | Sincroniza entre dos CMS como si fueran un solo ecosistema. |
 
 ---
 
@@ -58,10 +63,38 @@ Si usas **Bsale** y vendes en más de un CMS (WordPress, Shopify, PrestaShop, Wo
 
 ¿Quieres verlo en acción? **Contáctanos** para una demo o prueba gratuita.
 
-*(Aquí pondrías tu email, web o link de contacto)*
+📧 `comercial@kpcrop.com` (ejemplo)  
+🌐 [www.kpcrop.com/bsale-sync](https://ejemplo.com)
+
+---
+
+## 📚 Documentación del proyecto
 
 - [Arquitectura global](/docs/architecture/README.md)
 - [Contrato API del demonio](/docs/api/demonio-openapi.yaml)
 - [ADR (Decisiones técnicas)](/docs/adr/)
 - [Guía de desarrollo de plugins](/docs/plugin-development.md)
 
+---
+
+## 🧱 Estructura del proyecto
+kpcrop-latam-zollner-platform/
+├── .github/workflows/ # CI/CD condicional
+├── docs/
+│ ├── architecture/ # Diagramas y doc
+│ ├── api-contracts/ # OpenAPI del demonio
+│ └── licensing/ # Flujos de licencias
+├── packages/
+│ ├── bot-miki/ # Demonio sincronizador
+│ ├── app-servi-dropi/
+│ ├── app-client-dropi/
+│ ├── cms-wordpress/
+│ ├── cms-prestashop/
+│ ├── cms-shopify/
+│ ├── cms-woocommerce/
+│ ├── cms-magento/
+│ ├── cms-jumpseller/
+│ └── shared/ # Código común
+├── docker-compose.yml
+├── README.md
+└── LICENSE
