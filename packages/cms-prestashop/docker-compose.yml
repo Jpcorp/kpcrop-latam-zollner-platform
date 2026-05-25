@@ -1,0 +1,86 @@
+services:
+
+  # ── Base de datos MySQL (MariaDB 10.6) ────────────────────────────────────
+  mysql:
+    image: mariadb:10.6
+    container_name: kpcrop-ps178-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE:-prestashop}
+      MYSQL_USER:          ${MYSQL_USER:-prestashop}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD:-prestashop_dev}
+    ports:
+      - "3307:3306"         # 3307 para no colisionar con MySQL local
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=${MYSQL_ROOT_PASSWORD:-root_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── PrestaShop 1.7.8 ──────────────────────────────────────────────────────
+  prestashop:
+    image: prestashop/prestashop:1.7.8
+    container_name: kpcrop-prestashop-178
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # Instalación desatendida
+      PS_INSTALL_AUTO:      "1"
+      PS_DEV_MODE:          "1"          # activa fixtures/demo al instalar
+      # Base de datos
+      DB_SERVER:            mysql
+      DB_USER:              ${MYSQL_USER:-prestashop}
+      DB_PASSWD:            ${MYSQL_PASSWORD:-prestashop_dev}
+      DB_NAME:              ${MYSQL_DATABASE:-prestashop}
+      DB_PREFIX:            ps_
+      # Tienda
+      PS_DOMAIN:            "localhost:8080"
+      PS_SHOP_NAME:         "Tienda Dev kpcrop"
+      PS_LANGUAGE:          "es"
+      PS_COUNTRY:           "CL"
+      PS_ENABLE_SSL:        "0"
+      # Admin
+      ADMIN_MAIL:           ${PS_ADMIN_MAIL:-admin@kpcrop.local}
+      ADMIN_PASSWD:         ${PS_ADMIN_PASSWD:-Admin1234!}
+      PS_FOLDER_ADMIN:      "admin-dev"
+      PS_FOLDER_INSTALL:    "install-dev"
+    ports:
+      - "8080:80"
+    volumes:
+      - prestashop_data:/var/www/html
+      - ./bsalesync:/var/www/html/modules/bsalesync   # módulo en modo desarrollo (edición en caliente)
+    healthcheck:
+      # PS crea este archivo al terminar la instalación
+      test: ["CMD-SHELL", "[ -f /var/www/html/config/settings.inc.php ]"]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 60s     # PS tarda ~3 min en instalar la primera vez
+
+  # ── Init: instala tablas bsalesync + seed ─────────────────────────────────
+  ps-init:
+    image: mariadb:10.6
+    container_name: kpcrop-ps178-init
+    depends_on:
+      prestashop:
+        condition: service_healthy
+    environment:
+      DB_HOST:    mysql
+      DB_USER:    ${MYSQL_USER:-prestashop}
+      DB_PASSWD:  ${MYSQL_PASSWORD:-prestashop_dev}
+      DB_NAME:    ${MYSQL_DATABASE:-prestashop}
+      DB_PREFIX:  ps_
+    volumes:
+      - ./docker/post-install.sh:/post-install.sh:ro
+      - ./docker/seed-dev.sql:/seed-dev.sql:ro
+      - ./bsalesync/sql/install.sql:/install.sql:ro
+    command: bash /post-install.sh
+    restart: "no"           # ejecuta una sola vez; idempotente si se repite
+
+volumes:
+  mysql_data:
+  prestashop_data:

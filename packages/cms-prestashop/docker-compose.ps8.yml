@@ -1,0 +1,85 @@
+services:
+
+  # ── Base de datos MySQL (MariaDB 10.6) ────────────────────────────────────
+  mysql-ps8:
+    image: mariadb:10.6
+    container_name: kpcrop-ps8-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_dev}
+      MYSQL_DATABASE:      ${MYSQL_DATABASE:-prestashop8}
+      MYSQL_USER:          ${MYSQL_USER:-prestashop}
+      MYSQL_PASSWORD:      ${MYSQL_PASSWORD:-prestashop_dev}
+    ports:
+      - "3308:3306"         # puerto distinto al de PS 1.7.8
+    volumes:
+      - mysql_ps8_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost",
+             "-u", "root", "--password=${MYSQL_ROOT_PASSWORD:-root_dev}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── PrestaShop 8.2 ────────────────────────────────────────────────────────
+  prestashop-ps8:
+    image: prestashop/prestashop:8.2
+    container_name: kpcrop-prestashop-8
+    depends_on:
+      mysql-ps8:
+        condition: service_healthy
+    environment:
+      # Instalación desatendida
+      PS_INSTALL_AUTO:      "1"
+      PS_DEV_MODE:          "1"
+      # Base de datos
+      DB_SERVER:            mysql-ps8
+      DB_USER:              ${MYSQL_USER:-prestashop}
+      DB_PASSWD:            ${MYSQL_PASSWORD:-prestashop_dev}
+      DB_NAME:              ${MYSQL_DATABASE:-prestashop8}
+      DB_PREFIX:            ps_
+      # Tienda
+      PS_DOMAIN:            "localhost:8082"
+      PS_SHOP_NAME:         "Tienda Dev kpcrop (PS8)"
+      PS_LANGUAGE:          "es"
+      PS_COUNTRY:           "CL"
+      PS_ENABLE_SSL:        "0"
+      # Admin
+      ADMIN_MAIL:           ${PS_ADMIN_MAIL:-admin@kpcrop.local}
+      ADMIN_PASSWD:         ${PS_ADMIN_PASSWD:-Admin1234!}
+      PS_FOLDER_ADMIN:      "admin-dev"
+      PS_FOLDER_INSTALL:    "install-dev"
+    ports:
+      - "8082:80"           # puerto distinto al de PS 1.7.8
+    volumes:
+      - prestashop_ps8_data:/var/www/html
+      - ./bsalesync:/var/www/html/modules/bsalesync
+    healthcheck:
+      test: ["CMD-SHELL", "[ -f /var/www/html/config/settings.inc.php ]"]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # ── Init: instala tablas bsalesync + seed ─────────────────────────────────
+  ps8-init:
+    image: mariadb:10.6
+    container_name: kpcrop-ps8-init
+    depends_on:
+      prestashop-ps8:
+        condition: service_healthy
+    environment:
+      DB_HOST:    mysql-ps8
+      DB_USER:    ${MYSQL_USER:-prestashop}
+      DB_PASSWD:  ${MYSQL_PASSWORD:-prestashop_dev}
+      DB_NAME:    ${MYSQL_DATABASE:-prestashop8}
+      DB_PREFIX:  ps_
+    volumes:
+      - ./docker/post-install.sh:/post-install.sh:ro
+      - ./docker/seed-dev.sql:/seed-dev.sql:ro
+      - ./bsalesync/sql/install.sql:/install.sql:ro
+    command: bash /post-install.sh
+    restart: "no"
+
+volumes:
+  mysql_ps8_data:
+  prestashop_ps8_data:
