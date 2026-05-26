@@ -7,10 +7,30 @@ export async function licenseRoute(app: FastifyInstance) {
     '/license/token',
     {
       schema: {
+        tags: ['licencias'],
+        summary: 'Obtener JWT de licencia',
+        description: 'Valida la API Key del tenant y devuelve un JWT firmado (TTL 5 min). La respuesta lleva Cache-Control para que Cloudflare la cachee 4 min en el edge.',
+        security: [{ apiKey: [] }],
         querystring: {
           type: 'object',
           required: ['tenantId'],
-          properties: { tenantId: { type: 'string' } },
+          properties: {
+            tenantId: { type: 'string', description: 'ID unico del tenant', example: 'dev-tenant-001' },
+          },
+        },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              token:     { type: 'string', description: 'JWT firmado con HS256' },
+              expiresAt: { type: 'string', format: 'date-time' },
+              plan:      { type: 'string', enum: ['starter', 'growth', 'agency'] },
+              features:  { type: 'array', items: { type: 'string' } },
+              maxStores: { type: 'number' },
+            },
+          },
+          401: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } },
+          402: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } },
         },
       },
     },

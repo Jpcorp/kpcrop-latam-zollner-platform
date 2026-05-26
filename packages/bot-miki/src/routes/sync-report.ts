@@ -18,6 +18,10 @@ export async function syncReportRoute(app: FastifyInstance) {
     '/sync/report',
     {
       schema: {
+        tags: ['sync'],
+        summary: 'Reportar resultado de sincronizacion',
+        description: 'El plugin CMS llama a este endpoint al terminar una sync para registrar el resultado en el event log de bot-miki.',
+        security: [{ apiKey: [] }],
         body: {
           type: 'object',
           required: ['tenantId', 'syncType', 'entityType', 'status'],

@@ -29,7 +29,8 @@ services:
 
   bot-miki:
     build:
-      context: ./packages/bot-miki
+      context: .
+      dockerfile: packages/bot-miki/Dockerfile
     ports:
       - "3000:3000"
     env_file:

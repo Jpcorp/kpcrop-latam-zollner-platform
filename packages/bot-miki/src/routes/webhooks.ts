@@ -18,6 +18,9 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
     '/webhooks/bsale',
     {
       schema: {
+        tags: ['webhooks'],
+        summary: 'Recibir webhook de Bsale',
+        description: 'Recibe notificaciones de cambio de Bsale y las encola en BullMQ para procesamiento asincrono. Siempre responde 200 para que Bsale no reintente.',
         body: {
           type: 'object',
           required: ['cpnId', 'resource', 'resourceId', 'topic', 'action'],
@@ -65,6 +68,7 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
         {
           storeId:     store.id,
           tenantId:    store.license_id,
+          syncType:    'webhook',
           resourceUrl: payload.resource,
           resourceId:  payload.resourceId,
           topic:       payload.topic,
