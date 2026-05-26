@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis as IORedis } from 'ioredis';
 import { buildApp } from './app.js';
 import { config } from './config.js';
 import { startSyncWorker } from './workers/sync-worker.js';

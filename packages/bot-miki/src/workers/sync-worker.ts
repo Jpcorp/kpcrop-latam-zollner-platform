@@ -1,5 +1,5 @@
 import { Worker, type Job } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis as IORedis } from 'ioredis';
 import { config } from '../config.js';
 import { db } from '../infrastructure/database.js';
 import { BsaleHttpClient, BsaleApiError } from '../infrastructure/bsale-http-client.js';
@@ -130,7 +130,7 @@ async function processPollingCycle(
         changed++;
         await db
           .insertInto('bsale_variant_snapshots')
-          .values({ tenant_id: data.tenantId, variant_id: variantId, content_hash: hash, last_known_data: variant })
+          .values({ tenant_id: data.tenantId, variant_id: variantId, content_hash: hash, last_known_data: variant, last_seen_at: new Date() })
           .onConflict(oc => oc.columns(['tenant_id', 'variant_id']).doUpdateSet({ content_hash: hash, last_known_data: variant, last_seen_at: new Date() }))
           .execute();
       }

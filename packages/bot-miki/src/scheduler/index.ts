@@ -24,15 +24,19 @@ export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void>
   const now = new Date();
 
   const jobs = await db
-    .selectFrom('scheduled_jobs as sj')
-    .innerJoin('tenant_stores as ts', 'ts.id', 'sj.store_id')
-    .innerJoin('licenses as l', 'l.id', 'ts.license_id')
+    .selectFrom('scheduled_jobs')
+    .innerJoin('tenant_stores', 'tenant_stores.id', 'scheduled_jobs.store_id')
+    .innerJoin('licenses', 'licenses.id', 'tenant_stores.license_id')
     .select([
-      'sj.id', 'sj.store_id', 'sj.entity_type', 'sj.cron_expression',
-      'ts.license_id as tenant_id', 'l.status as license_status',
+      'scheduled_jobs.id',
+      'scheduled_jobs.store_id',
+      'scheduled_jobs.entity_type',
+      'scheduled_jobs.cron_expression',
+      'tenant_stores.license_id as tenant_id',
+      'licenses.status as license_status',
     ])
-    .where('sj.active', '=', true)
-    .where('l.status', '=', 'active')
+    .where('scheduled_jobs.active', '=', true)
+    .where('licenses.status', '=', 'active')
     .execute();
 
   for (const job of jobs) {
