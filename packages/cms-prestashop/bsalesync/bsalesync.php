@@ -106,7 +106,11 @@ class BsaleSync extends Module
             $output .= $this->saveConfig();
         }
 
-        return $output . $this->renderConfigForm();
+        if (Tools::isSubmit('submit_price_groups')) {
+            $output .= $this->savePriceGroups();
+        }
+
+        return $output . $this->renderConfigForm() . $this->renderPriceGroupForm();
     }
 
     private function saveConfig(): string
@@ -197,6 +201,108 @@ class BsaleSync extends Module
         ];
 
         return $helper->generateForm([$fields]);
+    }
+
+    // ─── Formulario de mapeo grupo → lista de precios ────────────────────────
+
+    private function renderPriceGroupForm(): string
+    {
+        $groups = Group::getGroups((int)$this->context->language->id);
+
+        $maps = Db::getInstance()->executeS(
+            'SELECT id_group, bsale_price_list_id, active
+             FROM `' . _DB_PREFIX_ . 'bsalesync_price_group_map`
+             WHERE id_shop = ' . (int)$this->context->shop->id
+        );
+
+        $mapped = [];
+        foreach ($maps as $map) {
+            $mapped[$map['id_group']] = $map;
+        }
+
+        $adminLink = $this->context->link->getAdminLink('AdminModules')
+            . '&configure=' . $this->name;
+
+        $html  = '<div class="panel">';
+        $html .= '<h3><i class="icon-tags"></i> ' . $this->l('Precios por grupo de clientes') . '</h3>';
+        $html .= '<p class="help-block">'
+            . $this->l('Asocia una lista de precios Bsale a cada grupo de clientes de PrestaShop.')
+            . ' ' . $this->l('Deja el ID en 0 para que el grupo use el precio base.')
+            . '</p>';
+        $html .= '<form method="post" action="' . htmlspecialchars($adminLink) . '">';
+        $html .= '<input type="hidden" name="submit_price_groups" value="1">';
+        $html .= '<table class="table">';
+        $html .= '<thead><tr>';
+        $html .= '<th>' . $this->l('Grupo PS') . '</th>';
+        $html .= '<th>' . $this->l('ID Lista de precios Bsale') . '</th>';
+        $html .= '<th>' . $this->l('Activo') . '</th>';
+        $html .= '</tr></thead><tbody>';
+
+        foreach ($groups as $group) {
+            $gid    = (int)$group['id_group'];
+            $map    = $mapped[$gid] ?? null;
+            $listId = (int)($map['bsale_price_list_id'] ?? 0);
+            $active = (int)($map['active'] ?? 0);
+
+            $html .= '<tr>';
+            $html .= '<td><strong>' . htmlspecialchars($group['name']) . '</strong> <small>(#' . $gid . ')</small></td>';
+            $html .= '<td><input type="number" class="form-control" style="width:100px"'
+                . ' name="group_price_list[' . $gid . ']"'
+                . ' value="' . $listId . '" min="0"></td>';
+            $html .= '<td><input type="checkbox" name="group_active[' . $gid . ']" value="1"'
+                . ($active ? ' checked' : '') . '></td>';
+            $html .= '</tr>';
+        }
+
+        $html .= '</tbody></table>';
+        $html .= '<button type="submit" class="btn btn-default pull-right">'
+            . '<i class="process-icon-save"></i> ' . $this->l('Guardar mapeo de precios')
+            . '</button>';
+        $html .= '</form></div>';
+
+        return $html;
+    }
+
+    private function savePriceGroups(): string
+    {
+        $groupPriceLists = Tools::getValue('group_price_list', []);
+        $groupActive     = Tools::getValue('group_active', []);
+        $idShop          = (int)$this->context->shop->id;
+
+        foreach ($groupPriceLists as $idGroup => $priceListId) {
+            $idGroup     = (int)$idGroup;
+            $priceListId = (int)$priceListId;
+            $active      = isset($groupActive[$idGroup]) ? 1 : 0;
+
+            if ($priceListId <= 0) {
+                Db::getInstance()->delete(
+                    _DB_PREFIX_ . 'bsalesync_price_group_map',
+                    'id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
+                );
+                continue;
+            }
+
+            $exists = Db::getInstance()->getValue(
+                'SELECT id FROM `' . _DB_PREFIX_ . 'bsalesync_price_group_map`
+                 WHERE id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
+            );
+
+            $data = ['bsale_price_list_id' => $priceListId, 'active' => $active];
+
+            if ($exists) {
+                Db::getInstance()->update(
+                    _DB_PREFIX_ . 'bsalesync_price_group_map',
+                    $data,
+                    'id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
+                );
+            } else {
+                $data['id_group'] = $idGroup;
+                $data['id_shop']  = $idShop;
+                Db::getInstance()->insert(_DB_PREFIX_ . 'bsalesync_price_group_map', $data);
+            }
+        }
+
+        return $this->displayConfirmation($this->l('Mapeo de precios guardado correctamente.'));
     }
 
     // ─── Cifrado de token de Bsale ────────────────────────────────────────────

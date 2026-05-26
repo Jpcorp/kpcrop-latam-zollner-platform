@@ -66,5 +66,17 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_log` (
     KEY `idx_shop_date` (`id_shop`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Mapeo grupo de clientes PrestaShop → lista de precios Bsale
+-- Permite que mayoristas, minoristas y otros grupos vean precios distintos
+CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_price_group_map` (
+    `id`                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `id_shop`               INT UNSIGNED NOT NULL DEFAULT 1,
+    `id_group`              INT UNSIGNED NOT NULL,   -- id del grupo PS (ps_group)
+    `bsale_price_list_id`   INT UNSIGNED NOT NULL,   -- id de la lista en Bsale
+    `active`                TINYINT(1) NOT NULL DEFAULT 1,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_shop_group` (`id_shop`, `id_group`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Fila inicial de config para la tienda por defecto
 INSERT IGNORE INTO `PREFIX_bsalesync_config` (`id_shop`) VALUES (1);

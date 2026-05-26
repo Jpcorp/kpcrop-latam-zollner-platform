@@ -178,9 +178,130 @@ class BsaleSyncService
 
     private function syncPrices(): SyncResult
     {
-        // Similar a syncProducts pero solo actualiza el campo price
-        // TODO: implementar con bsale->getAll('/v1/price_lists/{id}/details.json')
-        return new SyncResult();
+        $start  = microtime(true);
+        $result = new SyncResult();
+
+        $config = Db::getInstance()->getRow(
+            'SELECT bsale_price_list_id FROM `' . _DB_PREFIX_ . 'bsalesync_config`
+             WHERE id_shop = ' . $this->idShop
+        );
+
+        $priceListId = (int)($config['bsale_price_list_id'] ?? 0);
+        if (!$priceListId) {
+            throw new RuntimeException('No hay lista de precios configurada. Ve a Configuración > Bsale Sync.');
+        }
+
+        // Precio base: aplica a todos los clientes
+        $this->applyPriceList($priceListId, 0, $result);
+
+        // Precio por grupo de clientes (mayorista, minorista, etc.)
+        $groupMaps = Db::getInstance()->executeS(
+            'SELECT id_group, bsale_price_list_id
+             FROM `' . _DB_PREFIX_ . 'bsalesync_price_group_map`
+             WHERE id_shop = ' . $this->idShop . ' AND active = 1'
+        );
+
+        foreach ($groupMaps as $map) {
+            $groupResult = new SyncResult();
+            $this->applyPriceList((int)$map['bsale_price_list_id'], (int)$map['id_group'], $groupResult);
+            // Acumular errores de grupos en el resultado principal
+            $result->errors = array_merge($result->errors, $groupResult->errors);
+            $result->failed += $groupResult->failed;
+        }
+
+        $result->durationMs = (int)((microtime(true) - $start) * 1000);
+        return $result;
+    }
+
+    /**
+     * Descarga una lista de precios Bsale y la aplica en PrestaShop.
+     * Si $idGroup = 0 actualiza el precio base del producto.
+     * Si $idGroup > 0 crea un SpecificPrice para ese grupo de clientes.
+     */
+    private function applyPriceList(int $priceListId, int $idGroup, SyncResult $result): void
+    {
+        $details = $this->bsale->getAll("/v1/price_lists/{$priceListId}/details.json");
+
+        foreach ($details as $detail) {
+            try {
+                $variantId = (int)($detail['variant']['id'] ?? 0);
+                if (!$variantId) continue;
+
+                $price = (float)($detail['variantValue'] ?? 0);
+                if ($price <= 0) continue;
+
+                $idProduct = $this->findProductByBsaleVariantId($variantId);
+                if (!$idProduct) continue;
+
+                if ($idGroup === 0) {
+                    // Precio base: actualizar ps_product y ps_product_shop
+                    Db::getInstance()->update(
+                        _DB_PREFIX_ . 'product',
+                        ['price' => $price],
+                        'id_product = ' . $idProduct
+                    );
+                    Db::getInstance()->update(
+                        _DB_PREFIX_ . 'product_shop',
+                        ['price' => $price],
+                        'id_product = ' . $idProduct . ' AND id_shop = ' . $this->idShop
+                    );
+                } else {
+                    // Precio por grupo: upsert en ps_specific_price
+                    $this->upsertSpecificPrice($idProduct, $idGroup, $price);
+                }
+
+                $result->updated++;
+            } catch (Exception $e) {
+                $result->failed++;
+                $result->errors[] = [
+                    'code'    => (string)($detail['variant']['id'] ?? '?'),
+                    'message' => $e->getMessage(),
+                ];
+            }
+        }
+    }
+
+    /**
+     * Crea o actualiza un precio específico en ps_specific_price para un grupo de clientes.
+     * Esto permite que mayoristas y minoristas vean precios distintos en la tienda.
+     */
+    private function upsertSpecificPrice(int $idProduct, int $idGroup, float $price): void
+    {
+        $existing = (int)Db::getInstance()->getValue(
+            'SELECT id_specific_price FROM `' . _DB_PREFIX_ . 'specific_price`
+             WHERE id_product = ' . $idProduct . '
+               AND id_group = ' . $idGroup . '
+               AND id_shop = ' . $this->idShop . '
+               AND id_cart = 0
+               AND id_product_attribute = 0
+               AND id_customer = 0'
+        );
+
+        if ($existing) {
+            Db::getInstance()->update(
+                _DB_PREFIX_ . 'specific_price',
+                ['price' => $price],
+                'id_specific_price = ' . $existing
+            );
+        } else {
+            Db::getInstance()->insert(_DB_PREFIX_ . 'specific_price', [
+                'id_product'           => $idProduct,
+                'id_product_attribute' => 0,
+                'id_shop'              => $this->idShop,
+                'id_currency'          => 0,   // todas las monedas
+                'id_country'           => 0,   // todos los países
+                'id_group'             => $idGroup,
+                'id_customer'          => 0,
+                'id_cart'              => 0,
+                'price'                => $price,
+                'from_quantity'        => 1,
+                'reduction'            => 0,
+                'reduction_tax'        => 1,
+                'reduction_type'       => 'amount',
+                'from'                 => '0000-00-00 00:00:00',
+                'to'                   => '0000-00-00 00:00:00',
+            ]);
+        }
     }
 }
 
