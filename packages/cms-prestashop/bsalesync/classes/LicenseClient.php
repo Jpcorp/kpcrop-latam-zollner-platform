@@ -95,9 +95,9 @@ class LicenseClient
             throw new LicenseException('Respuesta invalida del servidor de licencias', 500);
         }
 
-        // Guardar JWT en la tabla de config del modulo
+        // Guardar JWT en la tabla de config del modulo (Db::update auto-agrega _DB_PREFIX_)
         Db::getInstance()->update(
-            _DB_PREFIX_ . 'bsalesync_config',
+            'bsalesync_config',
             [
                 'license_jwt'         => pSQL($data['token']),
                 'license_jwt_expires' => pSQL($data['expiresAt']),
