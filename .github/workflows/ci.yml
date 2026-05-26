@@ -82,6 +82,7 @@ jobs:
       - run: pnpm --filter @kpcrop/shared build
       - run: pnpm --filter bot-miki build
       - run: pnpm --filter bot-miki lint
+      - run: pnpm --filter bot-miki test
         env:
           DATABASE_URL: postgresql://botmiki:botmiki_test@localhost:5432/botmiki_test
           REDIS_URL: redis://localhost:6379
