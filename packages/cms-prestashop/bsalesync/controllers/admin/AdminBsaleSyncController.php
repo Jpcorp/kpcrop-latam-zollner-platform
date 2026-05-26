@@ -172,7 +172,7 @@ class AdminBsaleSyncController extends ModuleAdminController
 
     private function logSync(string $type, string $entity, SyncResult $result): void
     {
-        Db::getInstance()->insert(_DB_PREFIX_ . 'bsalesync_log', [
+        Db::getInstance()->insert('bsalesync_log', [
             'id_shop'      => (int)$this->context->shop->id,
             'sync_type'    => pSQL($type),
             'entity_type'  => pSQL($entity),

@@ -28,12 +28,12 @@ class BsaleSyncService
     {
         $this->license->getToken(); // Lanza LicenseException si no es valida
 
-        return match ($entityType) {
-            'products' => $this->syncProducts(),
-            'stock'    => $this->syncStock(),
-            'prices'   => $this->syncPrices(),
-            default    => throw new InvalidArgumentException("Entidad no soportada: {$entityType}"),
-        };
+        switch ($entityType) {
+            case 'products': return $this->syncProducts();
+            case 'stock':    return $this->syncStock();
+            case 'prices':   return $this->syncPrices();
+            default:         throw new InvalidArgumentException("Entidad no soportada: {$entityType}");
+        }
     }
 
     private function syncProducts(): SyncResult
@@ -132,11 +132,11 @@ class BsaleSyncService
         ];
 
         if ($exists) {
-            Db::getInstance()->update(_DB_PREFIX_ . 'bsalesync_product_map', $data,
+            Db::getInstance()->update('bsalesync_product_map', $data,
                 'bsale_code = "' . pSQL($variant['code']) . '" AND id_shop = ' . $this->idShop);
         } else {
             $data['id_shop'] = $this->idShop;
-            Db::getInstance()->insert(_DB_PREFIX_ . 'bsalesync_product_map', $data);
+            Db::getInstance()->insert('bsalesync_product_map', $data);
         }
     }
 
@@ -236,12 +236,12 @@ class BsaleSyncService
                 if ($idGroup === 0) {
                     // Precio base: actualizar ps_product y ps_product_shop
                     Db::getInstance()->update(
-                        _DB_PREFIX_ . 'product',
+                        'product',
                         ['price' => $price],
                         'id_product = ' . $idProduct
                     );
                     Db::getInstance()->update(
-                        _DB_PREFIX_ . 'product_shop',
+                        'product_shop',
                         ['price' => $price],
                         'id_product = ' . $idProduct . ' AND id_shop = ' . $this->idShop
                     );
@@ -279,12 +279,12 @@ class BsaleSyncService
 
         if ($existing) {
             Db::getInstance()->update(
-                _DB_PREFIX_ . 'specific_price',
+                'specific_price',
                 ['price' => $price],
                 'id_specific_price = ' . $existing
             );
         } else {
-            Db::getInstance()->insert(_DB_PREFIX_ . 'specific_price', [
+            Db::getInstance()->insert('specific_price', [
                 'id_product'           => $idProduct,
                 'id_product_attribute' => 0,
                 'id_shop'              => $this->idShop,

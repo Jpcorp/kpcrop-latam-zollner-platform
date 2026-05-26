@@ -128,7 +128,7 @@ class BsaleSync extends Module
         $encryptedToken = $this->encryptToken($token);
 
         Db::getInstance()->update(
-            _DB_PREFIX_ . 'bsalesync_config',
+            'bsalesync_config',
             [
                 'bsale_api_token'     => pSQL($encryptedToken),
                 'bsale_price_list_id' => $priceList,
@@ -276,7 +276,7 @@ class BsaleSync extends Module
 
             if ($priceListId <= 0) {
                 Db::getInstance()->delete(
-                    _DB_PREFIX_ . 'bsalesync_price_group_map',
+                    'bsalesync_price_group_map',
                     'id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
                 );
                 continue;
@@ -291,14 +291,14 @@ class BsaleSync extends Module
 
             if ($exists) {
                 Db::getInstance()->update(
-                    _DB_PREFIX_ . 'bsalesync_price_group_map',
+                    'bsalesync_price_group_map',
                     $data,
                     'id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
                 );
             } else {
                 $data['id_group'] = $idGroup;
                 $data['id_shop']  = $idShop;
-                Db::getInstance()->insert(_DB_PREFIX_ . 'bsalesync_price_group_map', $data);
+                Db::getInstance()->insert('bsalesync_price_group_map', $data);
             }
         }
 
