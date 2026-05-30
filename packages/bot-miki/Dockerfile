@@ -3,7 +3,7 @@ RUN npm install -g pnpm
 
 FROM base AS deps
 WORKDIR /app
-COPY package.json pnpm-workspace.yaml turbo.json ./
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml turbo.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/bot-miki/package.json ./packages/bot-miki/
 RUN pnpm install --frozen-lockfile
@@ -24,5 +24,6 @@ ENV NODE_ENV=production
 COPY --from=builder /app/packages/bot-miki/dist ./dist
 COPY --from=builder /app/packages/bot-miki/node_modules ./node_modules
 COPY --from=builder /app/packages/shared/dist ./node_modules/@kpcrop/shared/dist
+COPY --from=builder /app/packages/bot-miki/migrations ./migrations
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
