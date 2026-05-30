@@ -10,6 +10,7 @@ RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
 WORKDIR /app
+COPY package.json pnpm-workspace.yaml turbo.json ./
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps /app/packages/bot-miki/node_modules ./packages/bot-miki/node_modules
