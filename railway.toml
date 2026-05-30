@@ -1,6 +1,6 @@
 [build]
+builder = "DOCKERFILE"
 dockerfilePath = "packages/bot-miki/Dockerfile"
-buildCommand = ""
 
 [deploy]
 healthcheckPath = "/health"
