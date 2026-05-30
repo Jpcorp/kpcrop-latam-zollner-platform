@@ -1,6 +1,6 @@
 # ADR-001 — Canonical Product Model
 
-**Estado:** Propuesto  
+**Estado:** Aceptado — implementado en `packages/shared`  
 **Fecha:** 2026-05-22  
 **Autores:** Equipo kpcrop-latam  
 
@@ -29,66 +29,66 @@ El Canonical Product Model vive en `packages/shared/src/models/canonical-product
 
 ## Canonical Product Model
 
+> **Nota de implementacion:** El modelo se implemento con **Zod** (no con TypeScript interfaces simples) para obtener validacion en runtime ademas de tipado estatico. La alternativa Zod fue "considerada para v2" en el borrador original, pero se adopto en la implementacion inicial al verificar que el costo es bajo y el beneficio inmediato.
+
 ```typescript
-// packages/shared/src/models/canonical-product.ts
+// packages/shared/src/models/canonical-product.ts (implementacion real)
 
-export interface CanonicalProduct {
-  // Identidad
-  bsaleId: number;
-  code: string;              // SKU — clave de idempotencia en todos los CMS
-  name: string;
-  description?: string;
-  status: 'active' | 'inactive';
+export const CanonicalProductSchema = z.object({
+  bsaleId: z.number().int().positive(),
+  code: z.string().min(1),        // SKU — clave de idempotencia en todos los CMS
+  name: z.string().min(1),
+  description: z.string().optional(),
+  status: z.enum(['active', 'inactive']),
 
-  // Precio
-  price: {
-    net: number;             // Precio neto (sin IVA)
-    gross: number;           // Precio bruto (con IVA) — lo que paga el cliente
-    currency: 'CLP' | 'USD' | 'ARS' | 'MXN' | 'PEN' | 'COP';
-    taxRate: number;         // Ej: 0.19 para IVA Chile
-    priceListId?: number;    // ID de lista de precios en Bsale
-  };
+  price: z.object({
+    net: z.number().nonnegative(),
+    gross: z.number().nonnegative(),
+    currency: z.enum(['CLP', 'USD', 'ARS', 'MXN', 'PEN', 'COP']),
+    taxRate: z.number().min(0).max(1),  // 0.19 para IVA Chile; 0 para exento
+    priceListId: z.number().int().positive().optional(),
+  }),
 
-  // Stock
-  stock: {
-    quantity: number;
-    allowNegative: boolean;
-    ledgerAccount?: string;  // Codigo contable en Bsale
-  };
+  stock: z.object({
+    quantity: z.number().int(),
+    allowNegative: z.boolean(),
+    officeId: z.number().int().positive().optional(),  // undefined = todas las sucursales
+  }),
 
-  // Clasificacion
-  category?: {
-    id: number;
-    name: string;
-    path?: string[];          // Ruta jerarquica ["Electronica", "Computacion"]
-  };
+  category: z.object({
+    id: z.number().int().positive(),
+    name: z.string().min(1),
+    path: z.array(z.string()).optional(),  // ['Electronica', 'Computacion']
+  }).optional(),
 
-  brand?: string;
+  brand: z.string().optional(),
+  variants: z.array(CanonicalVariantSchema).optional(),
+  images: z.array(z.object({
+    url: z.string().url(),
+    isPrimary: z.boolean(),
+    order: z.number().int().nonnegative(),
+  })).optional(),
 
-  // Variantes (ej: talla S/M/L, color rojo/azul)
-  variants?: CanonicalVariant[];
+  bsaleUpdatedAt: z.date(),
+  syncedAt: z.date().optional(),
+});
 
-  // Imagenes
-  images?: Array<{
-    url: string;
-    isPrimary: boolean;
-    order: number;
-  }>;
+export type CanonicalProduct = z.infer<typeof CanonicalProductSchema>;
 
-  // Metadatos de sync
-  bsaleUpdatedAt: Date;
-  syncedAt?: Date;
-}
-
-export interface CanonicalVariant {
-  bsaleId: number;
-  code: string;              // SKU de la variante
-  attributes: Record<string, string>;  // {color: "Rojo", talla: "M"}
-  price?: Partial<CanonicalProduct['price']>;  // Override de precio base
-  stock: CanonicalProduct['stock'];
-  barcode?: string;
-}
+export const CanonicalVariantSchema = z.object({
+  bsaleId: z.number().int().positive(),
+  code: z.string().min(1),
+  attributes: z.record(z.string(), z.string()),  // {color: 'Rojo', talla: 'M'}
+  price: PriceSchema.partial().optional(),         // Override del precio base
+  stock: StockSchema,
+  barcode: z.string().optional(),
+});
 ```
+
+**Diferencias respecto al borrador original:**
+- `stock.ledgerAccount` eliminado — no se usa en el sync actual y Bsale no lo expone directamente
+- `stock.officeId` reemplaza la idea de filtro por sucursal
+- `bsalePaginatedResponseSchema<T>` agregado como factory generico para respuestas paginadas de Bsale
 
 ---
 
@@ -97,12 +97,19 @@ export interface CanonicalVariant {
 Cada adapter implementa la interfaz `CmsAdapter`:
 
 ```typescript
-// packages/shared/src/adapters/cms-adapter.interface.ts
+// packages/shared/src/adapters/cms-adapter.interface.ts (implementacion real)
 
-export interface CmsAdapter {
-  fromBsale(bsaleProduct: BsaleProduct): CanonicalProduct;
-  toCms(canonical: CanonicalProduct): unknown;           // tipo especifico por CMS
-  idempotencyKey(canonical: CanonicalProduct): string;   // campo clave en el CMS
+export interface CmsAdapter<TCmsProduct = unknown> {
+  fromBsale(bsaleProduct: unknown): CanonicalProduct;   // unknown: Bsale cambia sin previo aviso
+  toCms(canonical: CanonicalProduct): TCmsProduct;
+  idempotencyKey(canonical: CanonicalProduct): string;
+}
+
+export interface SyncResult {
+  updated: number;
+  failed: number;
+  errors: Array<{ code: string; message: string }>;
+  durationMs: number;
 }
 ```
 
@@ -130,4 +137,4 @@ Cada `packages/cms-*` implementa su propio `CmsAdapter`. Los adapters viven en e
 
 **Traduccion directa Bsale → CMS por adapter:** Rechazada. Escala mal — 6 CMS × N campos = 6N puntos de fallo independientes.
 
-**Schema con JSON Schema / Zod en lugar de TypeScript interface:** Considerada para v2. Zod permite validacion en runtime (no solo compilacion), util cuando bot-miki recibe productos de fuentes externas. Migracion no rompe contratos.
+**Schema con JSON Schema / Zod en lugar de TypeScript interface:** Adoptada en v1 (no diferida a v2). El costo de adopcion fue nulo — Zod ya era dependencia de `bot-miki` via `config.ts`. La validacion en runtime se usa en `processWebhookEvent` para verificar respuestas de Bsale antes de pasarlas al adapter.

@@ -1,6 +1,6 @@
 # ADR-003 — Cola de Tareas e Idempotencia
 
-**Estado:** Propuesto  
+**Estado:** Aceptado — implementado en `src/scheduler/index.ts` y `src/routes/webhooks.ts`  
 **Fecha:** 2026-05-22  
 **Autores:** Equipo kpcrop-latam  
 
@@ -20,54 +20,62 @@ Cada job en la cola tiene una **clave de idempotencia** unica. Si un job con la 
 
 ### Estructura de la Clave de Idempotencia
 
+**Jobs de polling (scheduler):**
 ```
-{tenantId}:{syncType}:{entityType}:{windowId}
+polling:{storeId}:{entityType}:{windowId}
+```
+
+**Jobs de webhook:**
+```
+webhook:{storeId}:{topic}:{resourceId}:{send}
 ```
 
 | Parte | Descripcion | Ejemplo |
 |---|---|---|
-| `tenantId` | Identificador del tenant | `acme-store` |
-| `syncType` | Tipo de sincronizacion | `auto` / `manual` |
+| `storeId` | UUID de la tienda (no tenant — una licencia puede tener varias tiendas) | `a1b2c3...` |
 | `entityType` | Entidad sincronizada | `products` / `prices` / `stock` |
-| `windowId` | Ventana temporal (previene duplicados en el mismo periodo, permite reintentos entre periodos) | `2026-05-22T14:00` (hora) |
+| `topic` | Topic del webhook de Bsale | `product` / `variant` / `stock` / `price` |
+| `resourceId` | ID del recurso en Bsale | `952` |
+| `send` | Unix timestamp del evento (del payload del webhook) | `1716393600` |
+| `windowId` | Hora ISO (ventana de deduplicacion para polling) | `2026-05-22T14` |
 
-**Ejemplo:**
+**Ejemplo polling:**
 ```
-acme-store:auto:products:2026-05-22T14:00
+polling:a1b2c3d4-...-uuid:products:2026-05-22T14
 ```
 
-Esta clave garantiza que el sync automatico de productos de las 14:00 del tenant `acme-store` se ejecuta como maximo una vez exitosamente en esa hora. Si falla, se puede reintentar dentro de la misma ventana. A las 15:00 se genera una nueva clave.
+**Ejemplo webhook:**
+```
+webhook:a1b2c3d4-...-uuid:product:952:1716393600
+```
+
+> **Por que `storeId` y no `tenantId`:** Un tenant puede tener multiples tiendas. La unidad de sync es la tienda, no el tenant. Usar `tenantId` mezclaría jobs de tiendas distintas bajo la misma clave.
 
 ---
 
 ## Implementacion con BullMQ
 
 ```typescript
-// packages/bot-miki/src/jobs/sync-job.ts
+// Polling — packages/bot-miki/src/scheduler/index.ts (implementacion real)
+const windowId       = now.toISOString().slice(0, 13); // "2026-05-22T14"
+const idempotencyKey = `polling:${job.store_id}:${job.entity_type}:${windowId}`;
 
-import { Queue, Worker } from 'bullmq';
+await queue.add('polling', { storeId, tenantId, syncType: 'polling', entityType }, {
+  jobId:    idempotencyKey,           // BullMQ deduplica por jobId
+  attempts: 3,
+  backoff:  { type: 'exponential', delay: 60_000 },
+  removeOnComplete: { age: 86_400 },  // mantener 24h para deduplicacion
+  removeOnFail:     { age: 604_800 }, // mantener 7 dias para debugging
+});
 
-const syncQueue = new Queue('sync', { connection: redis });
+// Webhook — packages/bot-miki/src/routes/webhooks.ts (implementacion real)
+const idempotencyKey = `webhook:${store.id}:${payload.topic}:${payload.resourceId}:${payload.send}`;
 
-async function enqueueSyncJob(params: SyncJobParams) {
-  const windowId = new Date().toISOString().slice(0, 13); // "2026-05-22T14"
-  const idempotencyKey = `${params.tenantId}:${params.syncType}:${params.entityType}:${windowId}`;
-
-  await syncQueue.add(
-    'sync',
-    { ...params, idempotencyKey },
-    {
-      jobId: idempotencyKey,  // BullMQ deduplica por jobId
-      attempts: 5,
-      backoff: {
-        type: 'exponential',
-        delay: 30_000,        // 30s inicial → 30s, 2m, 8m, 32m
-      },
-      removeOnComplete: { age: 86_400 },  // mantener 24h para deduplicacion
-      removeOnFail: { age: 604_800 },     // mantener 7 dias para debugging
-    }
-  );
-}
+await queue.add('bsale-webhook', { storeId, tenantId, syncType: 'webhook', ... }, {
+  jobId:    idempotencyKey,
+  attempts: 5,
+  backoff:  { type: 'exponential', delay: 30_000 },  // 30s → 2m → 8m → 32m → 2h
+});
 ```
 
 BullMQ deduplica jobs por `jobId`. Si se intenta encolar un job con el mismo `jobId` que uno ya en la cola o completado (dentro del TTL `removeOnComplete`), el segundo encolar es silenciosamente ignorado.
@@ -77,31 +85,39 @@ BullMQ deduplica jobs por `jobId`. Si se intenta encolar un job con el mismo `jo
 ## Estrategia de Reintentos por Tipo de Error
 
 ```typescript
-// packages/bot-miki/src/workers/sync-worker.ts
+// packages/bot-miki/src/workers/sync-worker.ts (implementacion real)
+// Concurrencia: 5 (no 10 — conservador hasta validar rate limits de Bsale)
 
-const worker = new Worker('sync', async (job) => {
+const worker = new Worker<SyncJobData>('sync', processJob, {
+  connection: redis,
+  concurrency: 5,
+});
+
+async function processJob(job: Job<SyncJobData>): Promise<void> {
+  // ...
   try {
-    await executeSyncJob(job.data);
-  } catch (error) {
-    if (isClientError(error)) {
-      // Error 4xx de Bsale: datos incorrectos, no temporal.
-      // No reintentar — marcar como fallido definitivamente.
-      await job.discard();
-      await logSyncEvent({ ...job.data, status: 'failed', reason: error.message });
+    // procesa webhook o polling
+  } catch (err) {
+    if (err instanceof BsaleApiError && err.isClientError) {
+      await job.discard();  // 4xx: no reintentar
       return;
     }
-
-    if (isLicenseError(error)) {
-      // Licencia expirada: no reintentar hasta que se renueve.
-      await job.discard();
-      await logSyncEvent({ ...job.data, status: 'skipped', reason: 'license_expired' });
-      return;
-    }
-
-    // Error 5xx o timeout: relanzar para que BullMQ reintente con backoff.
-    throw error;
+    throw err; // 5xx/timeout: BullMQ reintenta con backoff
   }
-}, { connection: redis, concurrency: 10 });
+}
+
+// Dead letter: se captura en el evento 'failed' cuando attemptsMade >= attempts
+worker.on('failed', async (job, error) => {
+  if (!job) return;
+  const isDeadLetter = job.attemptsMade >= (job.opts.attempts ?? 1);
+  if (!isDeadLetter) return;
+
+  await db.insertInto('sync_events').values({
+    status: 'dead_letter',
+    error_message: error.message,
+    // ...
+  }).execute();
+});
 ```
 
 | Tipo de error | Codigo HTTP | Accion |

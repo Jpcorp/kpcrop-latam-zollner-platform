@@ -1,6 +1,6 @@
 # ADR-004 — Estrategia de Sync: Webhooks + Polling Hibrido
 
-**Estado:** Propuesto  
+**Estado:** Aceptado — implementado en `src/workers/sync-worker.ts`, `src/scheduler/index.ts` y `src/routes/webhooks.ts`  
 **Fecha:** 2026-05-22  
 **Basado en:** [Investigacion Bsale API](../investigation/bsale-api-findings.md)
 
@@ -124,17 +124,28 @@ fastify.post('/v1/webhooks/bsale', async (request, reply) => {
 ### Snapshot para deteccion de cambios en polling
 
 ```sql
--- Tabla para comparacion eficiente en polling
 CREATE TABLE bsale_variant_snapshots (
     tenant_id       VARCHAR(100) NOT NULL,
     variant_id      INTEGER NOT NULL,
-    content_hash    VARCHAR(64) NOT NULL,  -- SHA256 de {price, stock, name, state}
+    content_hash    TEXT NOT NULL,        -- base64(JSON({code, cost, quantity, state}))
+    last_known_data JSONB,                -- ultimo estado completo de la variante
     last_seen_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, variant_id)
 );
 ```
 
-El polling no compara objetos completos — compara hashes de los campos relevantes (precio, stock, nombre, estado activo). Si el hash cambio, hay que sincronizar.
+El polling no compara objetos completos — compara hashes de los campos que disparan sync: `code`, `cost`, `quantity`, `state`. Si el hash cambio, hay que sincronizar.
+
+**Implementacion del hash** (`src/workers/sync-worker.ts`):
+```typescript
+function computeHash(variant: Record<string, unknown>): string {
+  const relevant = { code: variant['code'], cost: variant['cost'],
+                     quantity: variant['quantity'], state: variant['state'] };
+  return Buffer.from(JSON.stringify(relevant)).toString('base64');
+}
+```
+
+> **Nota:** Se usa base64 de JSON (no SHA256) por simplicidad y sin dependencias. Es suficiente para comparacion — no es un hash criptografico.
 
 ### Rate Limiting del cliente HTTP de Bsale
 

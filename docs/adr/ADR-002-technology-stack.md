@@ -1,6 +1,6 @@
 # ADR-002 — Stack Tecnologico
 
-**Estado:** Propuesto  
+**Estado:** Aceptado — stack operativo en `packages/bot-miki` y `packages/cms-prestashop`  
 **Fecha:** 2026-05-22  
 **Autores:** Equipo kpcrop-latam  
 

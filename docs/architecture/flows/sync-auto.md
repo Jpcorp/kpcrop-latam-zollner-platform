@@ -13,57 +13,64 @@ sequenceDiagram
     participant P as Plugin CMS (Webhook)
     participant LOG as Event Log
 
-    SCH->>Q: Encolar job {tenantId, cmsType, syncType, idempotencyKey}
-    Note over Q: idempotencyKey = tenantId:syncType:fecha
+    SCH->>Q: Encolar job {storeId, tenantId, syncType, entityType}
+    Note over Q: jobId = polling:{storeId}:{entityType}:{hora ISO}
 
-    Q->>W: Despachar job (concurrencia controlada)
-    W->>LIC: Verificar licencia activa para tenantId
-    LIC-->>W: OK / Licencia expirada
+    Q->>W: Despachar job (concurrencia: 5)
+    Note over W: La licencia se verifica consultando licenses JOIN tenant_stores en DB
 
-    alt Licencia expirada
-        W->>LOG: Registrar {tenantId, status: "skipped", reason: "license_expired"}
-        W-->>Q: Job completado (no reintento)
+    alt Licencia no activa
+        W->>LOG: Registrar {status: "skipped"}
+        W-->>Q: Job descartado (no reintento)
     end
 
-    W->>BS: GET /v1/products?updated_since={lastSyncAt}
-    BS-->>W: Productos modificados desde ultimo sync
+    W->>BS: GET /v1/products.json?expand=[variants]&limit=50&offset=0
+    Note over BS: Bsale NO tiene updated_since — se descarga el catalogo completo
+    BS-->>W: {items: [...], count: N}
 
     alt Bsale API no disponible (5xx / timeout)
         W-->>Q: Job fallido → reintento con backoff exponencial
-        Note over Q: Backoff: 30s → 2m → 8m → 32m (max 4 reintentos)
+        Note over Q: Backoff: 60s → 4m → 16m (max 3 reintentos para polling)
         Q->>W: Reintento N
     end
 
-    W->>W: Mapear a Canonical Product Model
-    W->>P: POST /sync/receive {products: [...], idempotencyKey}
-    P-->>W: 200 OK {updated: N, errors: []}
+    W->>W: Por cada variante: computar hash({code, cost, quantity, state})
+    W->>W: Comparar con bsale_variant_snapshots en DB
+    Note over W: Solo variantes con hash diferente generan trabajo
 
-    alt Plugin CMS no responde
-        W->>LOG: Registrar {status: "partial", reason: "cms_unreachable"}
-        W-->>Q: Job completado con advertencia (no reintento de Bsale)
+    alt Variante con cambio detectado
+        W->>W: Upsert snapshot en bsale_variant_snapshots
+        Note over W: TODO: traducir a CanonicalProduct y sync al CMS (pendiente implementacion)
     end
 
-    W->>LOG: Registrar {tenantId, status: "success", productsUpdated: N, duration: Xms}
-    LOG-->>W: OK
+    W->>LOG: Actualizar last_sync_at y last_sync_status en tenant_stores
 ```
 
 ---
 
 ## Estrategia de Reintentos
 
+**Jobs de polling (scheduler):**
+
 | Intento | Delay | Condicion |
 |---|---|---|
 | 1 (original) | 0s | Siempre |
-| 2 | 30s | Error 5xx o timeout de Bsale |
-| 3 | 2 min | Error 5xx o timeout de Bsale |
-| 4 | 8 min | Error 5xx o timeout de Bsale |
-| 5 | 32 min | Error 5xx o timeout de Bsale |
-| Dead Letter | — | Despues de 4 reintentos fallidos → alerta Slack |
+| 2 | 60s | Error 5xx o timeout de Bsale |
+| 3 | 4 min | Error 5xx o timeout de Bsale |
+| Dead Letter | — | Despues de 3 intentos fallidos → registro en sync_events |
+
+**Jobs de webhook:**
+
+| Intento | Delay | Condicion |
+|---|---|---|
+| 1 (original) | 0s | Siempre |
+| 2-5 | 30s → 2m → 8m → 32m | Error 5xx o timeout de Bsale |
+| Dead Letter | — | Despues de 5 intentos fallidos → registro en sync_events |
 
 **No se reintenta si:**
-- Bsale devuelve 4xx (error del cliente — datos incorrectos, no temporal)
-- La licencia del tenant esta expirada
-- El job tiene la misma `idempotencyKey` que un job ya completado exitosamente en las ultimas 24h
+- Bsale devuelve 4xx (error del cliente — datos incorrectos, no temporal) → `job.discard()`
+- El store no tiene `bsale_access_token` configurado → `job.discard()`
+- El job tiene el mismo `jobId` que uno ya completado dentro del `removeOnComplete.age` (24h)
 
 ---
 

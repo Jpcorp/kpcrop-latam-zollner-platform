@@ -56,8 +56,8 @@ erDiagram
     BSALE_VARIANT_SNAPSHOTS {
         varchar tenant_id PK
         int variant_id PK
-        varchar content_hash "SHA256 de precio+stock+nombre+estado"
-        jsonb last_known_data "ultimo estado conocido"
+        text content_hash "base64(JSON({code, cost, quantity, state}))"
+        jsonb last_known_data "ultimo estado conocido completo"
         timestamptz last_seen_at
     }
 
@@ -220,8 +220,8 @@ CREATE TABLE sync_events (
 CREATE TABLE bsale_variant_snapshots (
     tenant_id       VARCHAR(100) NOT NULL,
     variant_id      INTEGER NOT NULL,
-    content_hash    VARCHAR(64) NOT NULL,
-    last_known_data JSONB,
+    content_hash    TEXT NOT NULL,     -- base64(JSON({code, cost, quantity, state}))
+    last_known_data JSONB,             -- estado completo de la variante (para debug)
     last_seen_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (tenant_id, variant_id)
 );

@@ -15,20 +15,30 @@ Eso es todo. No sync automatico. No dropshipping. No dashboard de agencias. No m
 ## Scope MVP — Lo que SI entra
 
 ### Plugin PrestaShop (cms-prestashop)
-- [ ] Instalacion desde el gestor de modulos de PrestaShop 1.7 / 8.x
-- [ ] Pantalla de configuracion: ingresar Bsale API Token + API Key de licencia
+- [x] Scaffold del modulo PHP (`bsalesync/bsalesync.php`) — install/uninstall, tab, SQL
+- [x] `BsaleApiClient.php` — paginacion, rate limiting, manejo de errores
+- [x] `LicenseClient.php` — obtiene y cachea JWT de bot-miki
+- [x] `BsaleSyncService.php` — orquesta sync products/stock/prices, idempotente por SKU
+- [x] Tests PHPUnit para BsaleApiClient y BsaleSyncService
+- [x] CLI `bsalesync/cli/sync.php` para sync por linea de comandos / cron de PS
+- [x] `AdminBsaleSyncController.php` (scaffold base)
+- [ ] Pantalla de configuracion: ingresar Bsale API Token + API Key de licencia (UI completa)
 - [ ] Verificacion de conexion a Bsale al guardar (muestra nombre de la empresa)
-- [ ] Verificacion de licencia contra bot-miki (o un endpoint simple de validacion)
-- [ ] Sync manual de **productos**: nombre, descripcion, precio bruto, stock, categoria, imagenes
 - [ ] Barra de progreso o spinner durante el sync
-- [ ] Resultado del sync: "N productos actualizados / X errores"
+- [ ] Resultado del sync: "N productos actualizados / X errores" (UI)
 - [ ] Log de los ultimos 10 syncs en la pantalla de configuracion
-- [ ] Soporte para PrestaShop 1.7.x y 8.x
+- [ ] Soporte verificado en PrestaShop 1.7.x y 8.x
 
 ### bot-miki (demonio — funcionalidad minima)
-- [ ] Endpoint `GET /v1/license/token` — valida la API Key y devuelve JWT
-- [ ] Endpoint `POST /v1/sync/report` — recibe el reporte del sync del plugin
-- [ ] Base de datos con al menos una licencia de prueba activa (para el primer cliente)
+- [x] Endpoint `GET /v1/license/token` — valida la API Key y devuelve JWT (`routes/license.ts`)
+- [x] Endpoint `POST /v1/sync/report` — recibe el reporte del sync del plugin (`routes/sync-report.ts`)
+- [x] Endpoint `POST /v1/admin/tenants` — crea tenant + licencia + genera API Key (`routes/admin.ts`)
+- [x] Endpoint `POST /v1/webhooks/bsale` — recibe webhooks y encola jobs (`routes/webhooks.ts`)
+- [x] Scheduler + Worker de sync automatico con BullMQ (`scheduler/index.ts`, `workers/sync-worker.ts`)
+- [x] BsaleHttpClient con rate limiting + reintentos (`infrastructure/bsale-http-client.ts`)
+- [x] Schema de BD completo (licenses, tenant_stores, sync_events, snapshots, etc.) (`infrastructure/database.ts`)
+- [x] CanonicalProduct model con Zod (`packages/shared`)
+- [x] CmsAdapter interface (`packages/shared`)
 - [ ] Deployment en Railway (sin HA, sin escalado — un solo proceso)
 
 ### Infraestructura

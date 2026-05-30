@@ -2,13 +2,31 @@
 
 ## Planes
 
-| Plan | Tiendas | Sync Auto | Dropshipping | Precio |
-|---|---|---|---|---|
-| **Starter** | 1 | No | No | $X/mes |
-| **Growth** | 3 | Si | No | $Y/mes |
-| **Agency** | Ilimitado | Si | Si | $Z/mes (por seat) |
+Ver estrategia de pricing completa en [`business/pricing-strategy.md`](../business/pricing-strategy.md).
 
-Los precios son referenciales. El billing se gestiona en Stripe.
+### Canal Agencias (PRIMARIO — v2.0)
+
+| Plan | Clientes | White-label | Sync | Precio |
+|---|---|---|---|---|
+| **Agency Standard** | Hasta 15 | No | Cada 15 min | USD 99/mes |
+| **Agency Pro** | Ilimitados | Si | Webhook (tiempo real) | USD 199/mes |
+
+### Canal Directo (SECUNDARIO)
+
+| Plan | Tiendas | Sync Auto | Precio |
+|---|---|---|---|
+| **Starter** | 1 | No (manual) | USD 19/mes |
+| **Growth** | 3 | Si (cada 15 min) | USD 49/mes |
+
+**Features por plan en el modelo de datos:**
+
+| Plan | `features` en DB | `max_stores` |
+|---|---|---|
+| `starter` | `['sync_manual']` | 1 |
+| `growth`  | `['sync_manual', 'sync_auto', 'sync_prices']` | 3 |
+| `agency`  | `['sync_manual', 'sync_auto', 'sync_prices', 'dropshipping', 'multi_store']` | 50 |
+
+El billing se gestiona en Stripe. MercadoPago como opcion adicional para pagos en CLP.
 
 ---
 
