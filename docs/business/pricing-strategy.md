@@ -1,8 +1,10 @@
 # Estrategia de Pricing — kpcrop-latam-zollner-platform
 
-**Fecha:** 2026-05-22
-**Mercado primario:** Chile
-**Version:** 1.0
+**Fecha:** 2026-05-29
+**Mercado primario:** Chile → Agencias digitales como canal principal
+**Version:** 2.0 — Pivot a canal agencias
+
+> **Cambio v2.0:** Se introduce el canal **Agency White-Label** como producto principal. Los tiers Starter/Growth se mantienen para el canal directo (comerciantes individuales), pero el foco comercial es el tier Agency Pro (USD 199/mes, white-label, clientes ilimitados). Una sola agencia a USD 199/mes reemplaza a 10 clientes Starter en valor y tiene menor churn estructural.
 
 ---
 
@@ -53,24 +55,45 @@ El freemium requiere que el tier gratuito sea lo suficientemente util para gener
 
 ## 2. Modelo de Pricing Recomendado
 
-### 2.1 Estructura de Tiers
+### 2.1 Estructura de Tiers — v2.0
 
-| | **Starter** | **Growth** | **Agency** |
-|---|---|---|---|
-| **Precio mensual (USD)** | USD 19 | USD 49 | USD 120 |
-| **Precio mensual (CLP)** | CLP 18.050 | CLP 46.550 | CLP 114.000 |
-| **Precio anual (USD, 20% dto.)** | USD 182/año | USD 470/año | USD 1.152/año |
-| **Tiendas incluidas** | 1 | 3 | Ilimitadas |
-| **CMS soportados** | 1 (a eleccion) | Todos (6 CMS) | Todos (6 CMS) |
-| **Sync automatico** | No | Si | Si |
-| **Frecuencia de sync automatico** | — | Cada 15 min | En tiempo real (webhook) |
-| **Sync manual** | Si | Si | Si |
-| **Productos sincronizados** | Hasta 1.000 | Hasta 10.000 | Ilimitados |
-| **Historial de syncs** | 7 dias | 30 dias | 90 dias |
-| **Soporte** | Email (72h) | Email prioritario (24h) | Chat dedicado (8h) |
-| **Dashboard multi-tienda** | No | No | Si |
-| **Reportes de sync** | Basico | Avanzado | Avanzado + exportacion |
-| **Periodo de prueba** | 14 dias gratis | 14 dias gratis | 14 dias gratis |
+Dos canales con pricing independiente:
+
+#### Canal Agencias (PRIMARIO)
+
+| | **Agency Standard** | **Agency Pro** |
+|---|---|---|
+| **Precio mensual (USD)** | USD 99 | USD 199 |
+| **Precio mensual (CLP)** | CLP 94.050 | CLP 189.050 |
+| **Precio anual (USD, 15% dto.)** | USD 1.009/año | USD 2.030/año |
+| **Clientes (stores) incluidos** | Hasta 15 | Ilimitados |
+| **White-label** | No | Sí (logo + nombre + dominio personalizable) |
+| **CMS soportados** | Todos | Todos |
+| **Sync automático** | Cada 15 min | Webhook (tiempo real) |
+| **Dashboard multi-cliente** | Sí | Sí |
+| **Sub-branding por cliente** | No | Sí |
+| **Soporte** | Email prioritario (24h) | SLA dedicado (4h) |
+| **Reportes exportables** | Sí | Sí + white-label |
+| **Período de prueba** | 30 días gratis | 30 días gratis |
+| **Ideal para** | Agencias con 3-15 clientes Bsale | Agencias con 15+ clientes o que venden el servicio como propio |
+
+**Economía de la agencia (Agency Pro a USD 199/mes):**
+- Agencia con 10 clientes → cobra $25.000 CLP/mes por cliente → USD 250 de ingreso propio vs. USD 199 de costo = **margen positivo desde el cliente #1**
+- Equivalente a reemplazar 10 clientes Starter del canal directo con **1 sola venta**
+
+#### Canal Directo (SECUNDARIO)
+
+| | **Starter** | **Growth** |
+|---|---|---|
+| **Precio mensual (USD)** | USD 19 | USD 49 |
+| **Precio mensual (CLP)** | CLP 18.050 | CLP 46.550 |
+| **Precio anual (USD, 20% dto.)** | USD 182/año | USD 470/año |
+| **Tiendas incluidas** | 1 | 3 |
+| **CMS soportados** | 1 (a elección) | Todos |
+| **Sync automático** | No | Cada 15 min |
+| **Productos** | Hasta 1.000 | Hasta 10.000 |
+| **Soporte** | Email (72h) | Email prioritario (24h) |
+| **Período de prueba** | 14 días gratis | 14 días gratis |
 
 ### 2.2 Justificacion de Precios
 

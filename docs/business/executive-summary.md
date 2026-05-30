@@ -1,9 +1,11 @@
 # Resumen Ejecutivo — kpcrop-latam-zollner-platform
 
-**Fecha:** 2026-05-22
-**Version:** 1.0
+**Fecha:** 2026-05-29
+**Version:** 2.0 — Pivot a canal agencias
 **Destinatario:** SERCOTEC / CORFO / Inversionista Angel
 **Tipo de cambio:** 1 USD = 950 CLP
+
+> **Corrección v2.0:** La versión anterior afirmaba "sin competidor SaaS directo". Esto era incorrecto — hay 9+ competidores activos en Chile (Sidekick, Pixofia, Codificando, Lobo Creaciones, etc.). El análisis competitivo completo está en `competitive-analysis.md`. Como resultado, el modelo de negocio pivota a **agencias digitales como canal primario** con producto white-label (USD 199/mes), resolviendo simultáneamente el problema de distribución y la competencia frontal en el canal directo.
 
 ---
 
@@ -23,11 +25,12 @@ kpcrop es una plataforma SaaS B2B que sincroniza automaticamente el catalogo de 
 
 | Diferenciador | Descripcion |
 |---|---|
-| Especificidad de nicho | La unica solucion SaaS identificada exclusivamente para la integracion Bsale-CMS en Chile. No es una integracion generica (Zapier) ni un desarrollo custom de agencia. |
-| Multi-CMS desde el inicio | Compatible con PrestaShop, WooCommerce, Shopify, Magento 2 y Jumpseller — cubre el 90% del mercado de CMS de e-commerce en Chile. |
-| Onboarding en < 10 minutos | Configuracion autoservicio sin necesidad de programadores ni soporte tecnico. |
-| Idioma y soporte local | Documentacion y soporte 100% en espanol, con conocimiento del mercado chileno. |
-| Sin competidor SaaS directo | No existe una solucion equivalente consolidada en el mercado. La ventana de ser primero esta abierta. |
+| Producto white-label para agencias | Ninguno de los 9 competidores identificados ofrece white-label. Las agencias hoy derivan clientes a Sidekick/Codificando y pierden la relación. kpcrop les devuelve esa relación. |
+| Multi-CMS desde el inicio | Compatible con PrestaShop, WooCommerce, Shopify — cubre el 90% del mercado de CMS en Chile y Perú. |
+| Canal directo sin dependencia del marketplace de Bsale | El outreach a agencias no requiere aprobación de Bsale. Canal ejecutable desde hoy. |
+| Economía de agencia positiva desde el cliente #1 | Agency Pro a USD 199/mes: agencia con 10 clientes cobra $25.000 CLP/cliente → margen positivo inmediato. |
+| Primer mover en canal agencias | Ningún competidor actual vende en este canal con propuesta white-label — la ventana está abierta específicamente en este segmento. |
+| Expansión Perú sin competidores equivalentes | Bsale tiene 2.700+ clientes en Perú sin Sidekick/Pixofia/Codificando locales. |
 
 ---
 

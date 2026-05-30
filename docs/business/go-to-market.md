@@ -1,9 +1,11 @@
 # Plan Go-to-Market — kpcrop-latam-zollner-platform
 
-**Fecha:** 2026-05-22
-**Mercado primario:** Chile
+**Fecha:** 2026-05-29
+**Mercado primario:** Chile → Agencias digitales / Expansión Perú
 **Horizonte:** 12 meses desde el lanzamiento del MVP
-**Version:** 1.0
+**Version:** 2.0 — Pivot a canal agencias
+
+> **Cambio v2.0:** El canal de agencias pasa a ser canal 1. El objetivo es cerrar 3 agencias en 90 días (no 15 comerciantes individuales). El éxito de 3 agencias con 10 clientes cada una = 30 clientes activos sin trabajo de ventas adicional. La métrica principal cambia de "clientes individuales" a "agencias cerradas".
 
 ---
 
@@ -49,7 +51,37 @@ kpcrop-latam-zollner-platform se posiciona como el conector nativo entre Bsale y
 
 ## 2. Canales de Adquisicion y Tacticas
 
-### 2.1 Canal Prioritario 1 — Marketplace de Bsale
+### 2.1 Canal Prioritario 1 — Outreach Directo a Agencias (NUEVO)
+
+**Por qué:** Una agencia ya tiene relación con 10-50 comerciantes con Bsale. Un solo contrato de agencia = acceso inmediato a esos clientes sin CAC adicional. Las agencias hoy refieren a Sidekick/Codificando y pierden la relación con su propio cliente — kpcrop white-label resuelve ese dolor directamente.
+
+**Tácticas:**
+1. Mapear 20 agencias chilenas que implementan PrestaShop/WooCommerce (búsqueda Google: "agencia PrestaShop Chile", "implementación WooCommerce Chile", LinkedIn)
+2. Outreach secuencial: primer email de presentación → seguimiento a los 3 días → llamada de 20 minutos
+3. Propuesta de valor para la agencia: "Ofrece sincronización Bsale a tus clientes como servicio tuyo, sin infraestructura. Tu logo, tu precio, tu relación con el cliente."
+4. Primera agencia: acceso gratuito 60 días a cambio de feedback + testimonio
+5. Foco en agencias con 5+ clientes activos con Bsale — calificar antes de invertir tiempo
+
+**Mensaje para la agencia:**
+> "Hoy cuando un cliente tuyo con Bsale te pregunta por la sincronización, los derivas a Sidekick o Codificando. Ellos pasan a ser los proveedores del cliente — tú pierdes la relación. Con kpcrop puedes ofrecer exactamente lo mismo con tu marca."
+
+**Métrica de éxito:** 3 agencias cerradas en los primeros 90 días.
+
+### 2.2 Canal Prioritario 2 — Expansión Perú
+
+**Por qué:** Bsale tiene 2.700+ clientes en Perú. No hay competidores equivalentes a Sidekick/Pixofia/Codificando. Las agencias peruanas de WooCommerce/PrestaShop tienen el mismo dolor que las chilenas, sin solución. Contactar a Bsale Perú para listing como integrador certificado — en Perú probablemente somos los únicos en pedirlo.
+
+**Tácticas:**
+1. Investigar el mercado de agencias digitales en Perú (Google, LinkedIn, grupos)
+2. Contactar equipo comercial de Bsale Perú directamente para listing
+3. Identificar 5 agencias peruanas de PrestaShop/WooCommerce como primer pipeline
+4. Misma propuesta de valor white-label — adaptar materiales al mercado peruano
+
+**Timeline:** Iniciar en mes 4-5, una vez validado el modelo en Chile con 2+ agencias activas.
+
+**Métrica de éxito:** Listing en Bsale Perú + 2 agencias peruanas en los primeros 6 meses de operación en Perú.
+
+### 2.3 Canal Prioritario 3 — Marketplace de Bsale
 
 **Por que:** Trafico pre-calificado. Los usuarios ya tienen Bsale, ya buscan integraciones, ya tienen willingness to pay.
 
@@ -62,7 +94,7 @@ kpcrop-latam-zollner-platform se posiciona como el conector nativo entre Bsale y
 
 **Metrica de exito:** 5 clientes en los primeros 3 meses provenientes de este canal.
 
-### 2.2 Canal Prioritario 2 — Comunidades Online
+### 2.4 Canal — Comunidades Online
 
 **Por que:** Las PYMEs chilenas con e-commerce son activas en grupos de Facebook, Telegram y WhatsApp. El boca a boca en estas comunidades es el canal de mayor conversion para herramientas de este tipo.
 

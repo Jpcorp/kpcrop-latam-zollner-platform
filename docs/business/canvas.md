@@ -1,8 +1,10 @@
 # Business Model Canvas — kpcrop-latam-zollner-platform
 
-**Fecha:** 2026-05-22
-**Version:** 1.0
+**Fecha:** 2026-05-29
+**Version:** 2.0 — Pivot a agencias white-label (ver competitive-analysis.md para contexto)
 **Metodologia:** Business Model Canvas (Osterwalder & Pigneur)
+
+> **Cambio crítico v2.0:** El segmento primario cambia de comerciante individual a **agencia digital** como cliente directo. El TAM chileno de comerciantes individuales (~300-500 empresas) no sustenta una empresa SaaS. El canal de agencias resuelve el problema de distribución (una agencia = 10-50 clientes finales) sin requerir el marketplace de Bsale como dependency crítica.
 
 ---
 
@@ -18,29 +20,29 @@ El canvas esta construido desde la perspectiva del mercado primario (Chile) pero
 
 | **Asociaciones Clave** | **Actividades Clave** | **Propuesta de Valor** | **Relacion con Clientes** | **Segmentos de Clientes** |
 |---|---|---|---|---|
-| - Bsale (API y marketplace) | - Desarrollo y mantenimiento de integraciones Bsale-CMS | **Para comercios con Bsale y tienda online:** | - Trial autoservicio de 14 dias sin tarjeta | - Comercios individuales con Bsale + PrestaShop/WooCommerce/Shopify (Chile) |
-| - Agencias digitales (revendedores) | - Sincronizacion automatica de catalogo, stock y precios | Eliminar la actualizacion manual de productos entre Bsale y el CMS de e-commerce mediante sincronizacion automatica, reduciendo errores de stock y tiempo perdido. | - Onboarding self-service (<10 min) | - PYMEs con catalogo grande (1.000-10.000 SKUs) |
-| - PrestaShop, WooCommerce, Shopify (ecosistemas de plugins) | - Onboarding automatizado para nuevos tenants | | - Documentacion en espanol | - Agencias digitales que gestionan multiples clientes con Bsale |
-| - Stripe y MercadoPago (procesamiento de pagos) | - Soporte tecnico al cliente | **Beneficio clave:** El comercio configura la conexion una vez y desde ese momento Bsale es la fuente de verdad — cualquier cambio en Bsale se refleja automaticamente en el CMS. | - Soporte por email o ticket (sin telefono en MVP) | - Emprendedores digitales nativos con Bsale basico |
-| - SERCOTEC/CORFO (potencial) | - Marketing de contenidos y SEO | | - Comunidad de usuarios (Discord/grupo privado — fase 2) | |
-| | - Gestion de billing y suscripciones | | | |
+| - Bsale (API — fuente de datos) | - Desarrollo del panel multi-cliente para agencias | **Para agencias digitales (PRIMARIO):** | - Onboarding asistido para primera agencia | - **PRIMARIO: Agencias digitales** que implementan PrestaShop/WooCommerce para clientes con Bsale (Chile, luego Perú) |
+| - Agencias digitales (cliente principal y canal) | - Gestión white-label (logo, dominio, marca por agencia) | Herramienta white-label que permite a la agencia ofrecer sincronización Bsale→CMS a sus clientes como servicio propio, sin infraestructura ni desarrollo a medida. | - Outreach directo 1:1 (LinkedIn, email) | - **SECUNDARIO: Comercios individuales** con Bsale + PrestaShop/WooCommerce/Shopify (canal directo) |
+| - PrestaShop, WooCommerce, Shopify (ecosistemas) | - Sincronización automática de catálogo, stock y precios | **Una agencia con 10 clientes = USD 1.990/mes de revenue sin trabajo de ventas extra.** | - Soporte dedicado a agencias (SLA 4h) | - **FASE 2: Agencias en Perú** (primer mercado LATAM — sin competidores equivalentes) |
+| - Stripe y MercadoPago (pagos) | - Outreach y cierre de agencias (primeros 90 días) | **Para comercios (SECUNDARIO):** Eliminar actualización manual entre Bsale y CMS. | - Trial 14 días sin tarjeta (canal directo) | |
+| - SERCOTEC/CORFO (potencial) | - Marketing de contenidos y SEO (canal directo) | | - Comunidad de agencias partners | |
+| | - Gestión de billing y suscripciones | | | |
 
 | **Recursos Clave** | | | **Canales** | |
 |---|---|---|---|---|
-| - Programador full-stack (Node.js/TypeScript) | | | - Marketplace de Bsale (canal 1 — trafico pre-calificado) | |
-| - Disenador | | | - SEO organico ("conectar Bsale con [CMS]") | |
-| - Infraestructura Railway (bot-miki, PostgreSQL, Redis) | | | - Grupos de Facebook y comunidades de comerciantes chilenos | |
-| - Codigo fuente de las integraciones (activo tecnico clave) | | | - LinkedIn (para agencias y PYMEs medianas) | |
-| - API de Bsale (acceso) | | | - Referidos de clientes existentes | |
-| - Cuenta Stripe y MercadoPago activas | | | - Agencias digitales como canal de reventas (plan Agency) | |
+| - Programador full-stack (Node.js/TypeScript) | | | - **Canal 1: Outreach directo a agencias** (LinkedIn, email, comunidades de agencias) | |
+| - Infraestructura Railway (bot-miki, PostgreSQL, Redis) | | | - **Canal 2: Marketplace de Bsale** (canal directo a comerciantes — secundario) | |
+| - Código fuente de las integraciones (activo técnico) | | | - **Canal 3: Expansión Perú** — contacto directo Bsale Perú partnerships | |
+| - API de Bsale (acceso) | | | - SEO orgánico ("conectar Bsale con [CMS]") — canal directo largo plazo | |
+| - Cuenta Stripe y MercadoPago activas | | | - Referidos de agencias partners | |
 
 | **Estructura de Costos** | | | **Fuentes de Ingreso** |
 |---|---|---|---|
-| **Costos fijos:** Railway (~USD 25-50/mes), dominio/SSL (~USD 5/mes), email transaccional (~USD 5/mes), monitoreo (~USD 10/mes) | | | **Suscripcion mensual recurrente (MRR):** |
-| **Costos variables:** Fees de Stripe (2.9% + USD 0.30 por tx) y MercadoPago (3.49% por tx), soporte al cliente (tiempo) | | | - Starter: USD 19/mes (CLP 18.050) — 1 tienda, sync manual, hasta 1.000 productos |
-| **Inversion inicial:** Registro de marca INAPI (~USD 315), buffer 3 meses (~USD 240), dominio inicial (~USD 15) = **USD 570 total** | | | - Growth: USD 49/mes (CLP 46.550) — 3 tiendas, sync automatico c/15min, hasta 10.000 productos |
-| **Costo marginal por cliente adicional:** ~USD 0.50-2.00/mes | | | - Agency: USD 120/mes (CLP 114.000) — tiendas ilimitadas, dashboard multi-cliente |
-| **Punto de equilibrio:** 2 clientes activos (USD 80 / USD 44 ARPU promedio) | | | - Trial de 14 dias sin tarjeta de credito |
+| **Costos fijos:** Railway (~USD 50-100/mes con multi-tenant), dominio/SSL (~USD 5/mes), email transaccional (~USD 5/mes), monitoreo (~USD 10/mes) | | | **Canal Agencias (PRIMARIO):** |
+| **Costos variables:** Fees de Stripe/MP, soporte al cliente | | | - Agency Standard: USD 99/mes — hasta 15 clientes, sin white-label |
+| **Inversión inicial:** USD 570 (INAPI + buffer + dominio) | | | - Agency Pro: USD 199/mes — clientes ilimitados, white-label completo |
+| **Costo marginal por agencia adicional:** ~USD 2-5/mes (infra) | | | **Canal Directo (SECUNDARIO):** |
+| **Punto de equilibrio canal agencias:** 1 agencia Pro = USD 199 > USD 120 costos fijos | | | - Starter: USD 19/mes — 1 tienda, sync manual |
+| | | | - Growth: USD 49/mes — 3 tiendas, sync automático |
 
 ---
 
@@ -48,14 +50,17 @@ El canvas esta construido desde la perspectiva del mercado primario (Chile) pero
 
 ### Bloque 1: Segmentos de Clientes
 
-El producto sirve a cuatro perfiles diferenciados con necesidades similares pero contextos diferentes:
+**v2.0 — El segmento primario es la agencia, no el comerciante.**
 
-| Segmento | Descripcion | Tier objetivo | Urgencia |
-|---|---|---|---|
-| Comerciante individual (Rodrigo) | Dueno de tienda con Bsale + PrestaShop/WooCommerce. Actualiza precios manualmente. | Starter | Alta |
-| PYME con catalogo grande (Valeria) | Distribuidor o retail con 1.000-10.000 SKUs. Tiene proceso manual fragil. | Growth | Alta |
-| Agencia digital (Sebastian) | Gestiona 10-25 clientes con Bsale. Quiere ofrecer sync como servicio. | Agency | Media-Alta |
-| Emprendedora digital (Catalina) | Negocio 100% online, Bsale basico, ve el problema crecer. | Starter | Media |
+El TAM chileno de comerciantes individuales con Bsale + PrestaShop/WooCommerce es ~300-500 empresas (insuficiente para un SaaS). El TAM de agencias en Chile que implementan esos CMS es ~200-300 agencias, cada una con 5-50 clientes activos. Una agencia = 10-50 clientes potenciales. El canal de agencias resuelve la distribución.
+
+| Segmento | Descripcion | Tier objetivo | Urgencia | Canal |
+|---|---|---|---|---|
+| **Agencia digital — PRIMARIO** (Sebastián) | Gestiona 10-50 clientes con PrestaShop/WooCommerce. Sus clientes usan Bsale. Hoy refiere a Sidekick/Codificando y pierde la relación con el cliente. | Agency Pro (USD 199/mes) | Alta — pierde clientes a competidores que sí ofrecen esto | Outreach directo |
+| **Agencia pequeña** (María) | 3-10 clientes, quiere ofrecer sync pero no tiene escala para Agency Pro aún. | Agency Standard (USD 99/mes) | Media-Alta | Outreach directo |
+| Comerciante individual (Rodrigo) | Dueño de tienda con Bsale + PrestaShop/WooCommerce. Actualiza manualmente. | Starter (USD 19/mes) | Alta | Marketplace Bsale / SEO |
+| PYME con catálogo grande (Valeria) | Distribuidor o retail con 1.000-10.000 SKUs. | Growth (USD 49/mes) | Alta | Marketplace Bsale / referido |
+| **Agencia en Perú — FASE 2** (Carlos) | Misma necesidad que Sebastián pero en Perú, donde no hay Sidekick/Pixofia/Codificando. | Agency Pro (USD 199/mes) | Alta — mercado sin competidores equivalentes | Bsale Perú partnerships |
 
 ### Bloque 2: Propuesta de Valor
 
@@ -76,13 +81,16 @@ La propuesta de valor central es:
 
 ### Bloque 3: Canales
 
-| Canal | Etapa del funnel | Costo | Prioridad |
-|---|---|---|---|
-| Marketplace de Bsale | Descubrimiento + consideracion | Bajo (costo de aprobacion, sin CPC) | 1 |
-| SEO organico ("conectar Bsale con PrestaShop") | Descubrimiento | Tiempo de contenido | 2 |
-| Grupos Facebook/comunidades | Descubrimiento | Bajo (tiempo de participacion) | 3 |
-| Agencias digitales (reventas) | Descubrimiento + cierre | Comercial — requiere outreach | 4 |
-| LinkedIn | Descubrimiento (agencias y PYMEs medianas) | Tiempo | 5 |
+**v2.0 — El canal de agencias es el canal 1. El marketplace de Bsale pasa a canal 2 (para el canal directo).**
+
+| Canal | Segmento target | Etapa del funnel | Costo | Prioridad |
+|---|---|---|---|---|
+| **Outreach directo a agencias** (LinkedIn, email, referencias) | Agencias | Descubrimiento + cierre | Tiempo del fundador | **1 — ejecutar ahora** |
+| **Comunidades de agencias** (Meetup desarrolladores, grupos Slack/Discord de agencias PrestaShop/WC en Chile) | Agencias | Descubrimiento | Bajo | **2 — ejecutar ahora** |
+| Marketplace de Bsale | Comerciantes directos | Descubrimiento + consideración | Bajo (requiere aprobación) | 3 — iniciar proceso |
+| SEO orgánico ("conectar Bsale con PrestaShop") | Comerciantes directos | Descubrimiento | Tiempo de contenido | 4 — mes 3+ |
+| **Bsale Perú partnerships** | Agencias Perú | Descubrimiento + distribución | Tiempo | 5 — mes 4-6 |
+| Referidos de agencias partners | Agencias + Comerciantes | Descubrimiento | Costo de descuentos | 6 — cuando haya 3+ agencias |
 
 ### Bloque 4: Relacion con Clientes
 
