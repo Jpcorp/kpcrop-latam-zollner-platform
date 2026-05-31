@@ -33,3 +33,6 @@ Thumbs.db
 # PrestaShop
 packages/cms-prestashop/bsalesync/config.xml
 bsalesync-v*.zip
+
+# Secrets (nunca al repo)
+docs/deployment/secrets.md
