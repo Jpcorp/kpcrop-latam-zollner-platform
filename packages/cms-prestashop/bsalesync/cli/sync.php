@@ -25,7 +25,7 @@ ini_set('memory_limit', '512M');
 
 // ── Bootstrap de PrestaShop ───────────────────────────────────────────────────
 
-define('_PS_ROOT_DIR_', realpath(__DIR__ . '/../../../../../'));
+define('_PS_ROOT_DIR_', realpath(__DIR__ . '/../../../'));
 
 if (!file_exists(_PS_ROOT_DIR_ . '/config/config.inc.php')) {
     fwrite(STDERR, "[ERROR] No se encontró PrestaShop en: " . _PS_ROOT_DIR_ . "\n");
@@ -34,6 +34,7 @@ if (!file_exists(_PS_ROOT_DIR_ . '/config/config.inc.php')) {
 
 require_once _PS_ROOT_DIR_ . '/config/config.inc.php';
 require_once _PS_ROOT_DIR_ . '/init.php';
+require_once _PS_MODULE_DIR_ . 'bsalesync/bsalesync.php';
 require_once _PS_MODULE_DIR_ . 'bsalesync/classes/BsaleApiClient.php';
 require_once _PS_MODULE_DIR_ . 'bsalesync/classes/LicenseClient.php';
 require_once _PS_MODULE_DIR_ . 'bsalesync/classes/BsaleSyncService.php';

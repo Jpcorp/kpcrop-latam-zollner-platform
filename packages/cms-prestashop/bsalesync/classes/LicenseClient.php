@@ -69,7 +69,7 @@ class LicenseClient
 
     private function fetchAndCacheToken(): string
     {
-        $url = $this->daemonUrl . '/v1/license/token?tenantId=' . urlencode($this->tenantId);
+        $url = $this->daemonUrl . '/v1/license/token';
 
         $ch = curl_init($url);
         curl_setopt_array($ch, [
