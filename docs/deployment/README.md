@@ -2,158 +2,151 @@
 
 ---
 
+## Produccion — Estado actual (2026-05-31)
+
+| Componente | URL / Estado |
+|---|---|
+| **bot-miki** | `https://kpcrop-latam-zollner-platform-production.up.railway.app` |
+| **Health** | `GET /health` → `{"status":"ok","version":"0.0.1"}` |
+| **Swagger UI** | `GET /docs` |
+| **PostgreSQL** | Railway managed — migracion auto-aplicada en startup |
+| **Redis** | Railway managed |
+| **Proyecto Railway** | `truthful-essence` (ID: `b6525894-63c0-47f5-9617-bcbd6ea05b0e`) |
+| **Branch deployado** | `master` — Railway autodeploy en cada push |
+
+### Tenant de produccion activo
+
+| Campo | Valor |
+|---|---|
+| tenantId | `tienda-zollner-cl` |
+| Plan | `growth` (3 tiendas, sync manual + auto + precios) |
+| API Key | Ver `docs/deployment/secrets.md` (no en repo) |
+| Estado | `active` — sin vencimiento |
+
+---
+
+## Plugin PrestaShop — Configuracion en cliente
+
+Al instalar el modulo `bsalesync` en el PrestaShop del cliente, configurar en
+**Admin → Catalogo → Bsale Sync**:
+
+| Campo | Valor para primer cliente |
+|---|---|
+| Token de acceso Bsale | *(token de la cuenta Bsale del cliente)* |
+| API Key de licencia kpcrop | Ver `docs/deployment/secrets.md` |
+| daemon_api_url (config avanzada) | `https://kpcrop-latam-zollner-platform-production.up.railway.app` |
+| Lista de precios Bsale (config avanzada) | ID de lista del cliente (ej: `1`) |
+
+> **Nota dominio:** `api.espaciobits.com` esta registrado con CNAME correcto pero Railway
+> no puede emitir el cert SSL porque `espaciobits.com` raiz apunta a otro hosting.
+> Mientras se resuelve, usar la URL de Railway directamente. El cambio futuro es
+> solo actualizar `daemon_api_url` en la tabla `bsalesync_config` del cliente.
+
+---
+
+## Crear nuevo tenant (nuevo cliente)
+
+```bash
+curl -X POST https://kpcrop-latam-zollner-platform-production.up.railway.app/v1/admin/tenants \
+  -H "X-Admin-Key: <ADMIN_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "tenantId":       "nombre-cliente-cl",
+    "subscriptionId": "manual-001",
+    "plan":           "growth",
+    "maxStores":      3,
+    "features":       ["sync_manual","sync_auto","sync_prices"]
+  }'
+```
+
+La respuesta incluye el `apiKey` — **guardarlo inmediatamente**, no se muestra de nuevo.
+
+---
+
 ## Entorno Local (desarrollo)
 
 ### Requisitos
-- Docker Desktop
-- Node.js 22+
-- pnpm 9+
-- PHP 8.1+ (solo para desarrollo del plugin PrestaShop)
+- Docker Desktop con WSL2 integration activa
+- Node.js 22+ / pnpm 9+
 
 ### Levantar el stack
 
 ```bash
-# 1. Clonar y entrar al repo
-git clone <repo> && cd kpcrop-latam-zollner-platform
-
-# 2. Instalar dependencias Node
+# 1. Instalar dependencias
 pnpm install
 
-# 3. Configurar variables de entorno
-cp packages/bot-miki/.env.example packages/bot-miki/.env
-# Editar packages/bot-miki/.env con tus valores
+# 2. Levantar bot-miki + PostgreSQL + Redis
+docker compose up -d
 
-# 4. Levantar PostgreSQL + Redis
-docker compose up postgres redis -d
+# 3. bot-miki disponible en http://localhost:3000
+# Swagger UI: http://localhost:3000/docs
 
-# 5. Ejecutar migraciones
-psql $DATABASE_URL -f packages/bot-miki/migrations/001_initial_schema.sql
-psql $DATABASE_URL -f packages/bot-miki/migrations/002_seed_dev.sql
-
-# 6. Compilar shared y arrancar bot-miki
-pnpm --filter @kpcrop/shared build
-pnpm dev
+# 4. PrestaShop local (para desarrollo del plugin)
+cd packages/cms-prestashop
+docker compose up -d
+# Backoffice: http://localhost:8080/admin-dev
+# Email: admin@kpcrop.local  Pass: Admin1234!
 ```
 
-### Verificar que bot-miki esta corriendo
+### Seed de desarrollo
 
-```bash
-curl http://localhost:3000/health
-# Esperado: {"status":"ok","version":"0.0.1","uptime":5}
+El contenedor `kpcrop-ps178-init` corre `docker/post-install.sh` automaticamente
+y aplica `docker/seed-dev.sql`. El seed configura:
 
-curl -H "X-API-Key: kp_dev_api_key_para_desarrollo_local_no_usar_en_prod" \
-     "http://localhost:3000/v1/license/token?tenantId=dev-tenant-001"
-# Esperado: {"token":"eyJ...","expiresAt":"...","features":[...],"plan":"agency"}
-```
+- `daemon_api_url` → `http://host.docker.internal:3000` (bot-miki local)
+- `daemon_api_key` → `kp_dev_api_key_para_desarrollo_local_no_usar_en_prod`
+- 4 registros de log de ejemplo en `bsalesync_log`
+
+Para probar contra Railway en lugar de bot-miki local, editar `seed-dev.sql`
+y cambiar `daemon_api_url` y `daemon_api_key` a los valores de produccion.
 
 ---
 
-## Staging y Produccion — Railway
+## Variables de entorno en Railway
 
-### Estructura de servicios en Railway
+| Variable | Descripcion |
+|---|---|
+| `DATABASE_URL` | Auto-generada por PostgreSQL plugin |
+| `REDIS_URL` | Auto-generada por Redis plugin |
+| `JWT_SECRET` | Minimo 32 chars — secreto para firmar JWTs |
+| `ADMIN_KEY` | Minimo 16 chars — protege endpoint `/v1/admin/*` |
+| `NODE_ENV` | `production` |
+| `LOG_LEVEL` | `info` |
+| `BSALE_RATE_LIMIT_RPS` | `10` (conservador hasta confirmar el real con Bsale) |
 
-```
-Proyecto Railway: kpcrop-latam-zollner
-├── bot-miki       (servicio Node.js — Dockerfile en packages/bot-miki)
-├── PostgreSQL     (plugin oficial de Railway)
-└── Redis          (plugin oficial de Railway)
-```
-
-### Deploy inicial
-
-```bash
-# Instalar Railway CLI
-npm install -g @railway/cli
-railway login
-
-# Crear proyecto
-railway init
-
-# Agregar plugins de base de datos desde el dashboard de Railway:
-# Settings > Add Plugin > PostgreSQL
-# Settings > Add Plugin > Redis
-
-# Vincular variables de entorno (en Railway dashboard o via CLI)
-railway variables set JWT_SECRET=$(node -e "console.log(require('crypto').randomBytes(32).toString('hex'))")
-railway variables set NODE_ENV=production
-railway variables set LOG_LEVEL=info
-railway variables set BSALE_RATE_LIMIT_RPS=10
-
-# Deploy
-railway up --service bot-miki
-```
-
-### Ejecutar migraciones en Railway
-
-```bash
-# Una sola vez al hacer deploy inicial
-railway run --service bot-miki psql $DATABASE_URL -f packages/bot-miki/migrations/001_initial_schema.sql
-```
-
-### Variables de entorno requeridas en Railway
-
-| Variable | Descripcion | Ejemplo |
-|---|---|---|
-| `DATABASE_URL` | Auto-generada por plugin PostgreSQL | `postgresql://...` |
-| `REDIS_URL` | Auto-generada por plugin Redis | `redis://...` |
-| `JWT_SECRET` | Minimo 32 chars — generar con crypto.randomBytes | `abc123...` |
-| `NODE_ENV` | Ambiente | `production` |
-| `LOG_LEVEL` | Nivel de logs | `info` |
-| `BSALE_RATE_LIMIT_RPS` | Rate limit conservador hasta confirmar el real | `10` |
-| `STRIPE_SECRET_KEY` | Para validar suscripciones | `sk_live_...` |
-| `STRIPE_WEBHOOK_SECRET` | Para validar webhooks de Stripe | `whsec_...` |
-
-### Configurar dominio personalizado
-
-En Railway > Settings > Domains:
-- Agregar `api.kpcrop.com`
-- Configurar en Cloudflare: `CNAME api → <railway-domain>.up.railway.app`
-
-### Configurar Cloudflare
-
-```
-# Cache de tokens de licencia en el edge (reduce latencia para clientes en Chile)
-# Cloudflare Dashboard > Rules > Cache Rules
-
-Rule: Cache License Tokens
-  When: URI path contains "/v1/license/token"
-  Cache: Cache everything
-  Edge TTL: 4 minutes
-```
+> `STRIPE_SECRET_KEY` y `STRIPE_WEBHOOK_SECRET` son opcionales en MVP.
 
 ---
 
-## Checklist Pre-Deploy a Produccion
+## Migraciones
 
-- [ ] `JWT_SECRET` es un secreto unico de al menos 32 chars
-- [ ] `DATABASE_URL` apunta a la BD de produccion (no desarrollo)
-- [ ] Migraciones ejecutadas: `001_initial_schema.sql`
-- [ ] Seed de dev (`002_seed_dev.sql`) **NO** ejecutado en produccion
-- [ ] Cloudflare configurado con CNAME a Railway
-- [ ] `GET https://api.kpcrop.com/health` devuelve `{"status":"ok"}`
-- [ ] Al menos una licencia real creada en la tabla `licenses`
-- [ ] Stripe webhook configurado apuntando a `https://api.kpcrop.com/v1/webhooks/stripe`
-- [ ] Primer cliente puede obtener JWT: `GET /v1/license/token?tenantId=<tenant>&X-API-Key=<key>`
+La migracion `001_initial_schema.sql` se aplica **automaticamente** al arrancar
+el servicio (`src/index.ts` la ejecuta en startup, idempotente — ignora error 42P07).
+No es necesario ejecutarla manualmente en Railway.
 
 ---
 
 ## Monitoreo
 
-### Logs en Railway
-
 ```bash
-railway logs --service bot-miki --tail
+# Logs en tiempo real (Railway CLI)
+railway logs --service kpcrop-latam-zollner-platform --tail
+
+# Health check
+curl https://kpcrop-latam-zollner-platform-production.up.railway.app/health
 ```
 
-### Health check automatico
+Railway reinicia automaticamente si el health check falla 3 veces consecutivas
+(configurado en `railway.toml`: `restartPolicyType = "ON_FAILURE"`).
 
-Railway hace health check al endpoint `/health` cada 30 segundos. Si falla 3 veces consecutivas, reinicia el servicio automaticamente.
+---
 
-### Alertas recomendadas (Grafana Cloud)
+## Checklist Pre-Onboarding Cliente
 
-| Alerta | Condicion | Canal |
-|---|---|---|
-| bot-miki caido | `/health` no responde > 1 min | Slack #alertas |
-| Error rate alto | > 5% de requests 5xx en 5 min | Slack #alertas |
-| Dead letter queue | > 5 jobs en DLQ en 1 hora | Slack #alertas |
-| Licencias expiradas | `SELECT count(*) FROM licenses WHERE status='suspended'` aumenta | Email comercial |
+- [x] `GET /health` devuelve `{"status":"ok"}`
+- [x] Tenant creado via `POST /v1/admin/tenants`
+- [x] API Key entregada al cliente (o configurada en el plugin)
+- [x] `GET /v1/license/token` con la API Key devuelve JWT valido
+- [ ] Plugin instalado en el PrestaShop del cliente
+- [ ] Primer sync manual exitoso con datos reales del cliente
+- [ ] Cliente puede repetir el sync sin duplicados

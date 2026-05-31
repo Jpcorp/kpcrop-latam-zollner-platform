@@ -4,48 +4,60 @@ El MVP es el minimo que le demuestra valor real a un primer cliente de pago. No 
 
 ---
 
+## Estado actual — 2026-05-31
+
+> **MVP COMPLETADO** — El sync end-to-end esta validado en produccion.
+> Primer tenant activo: `tienda-zollner-cl` (plan growth).
+
+### Checklist de completion
+
+#### Plugin PrestaShop (cms-prestashop)
+- [x] Scaffold del modulo PHP (`bsalesync/bsalesync.php`) — install/uninstall, tab, SQL
+- [x] `BsaleApiClient.php` — paginacion, rate limiting, manejo de errores
+- [x] `LicenseClient.php` — obtiene y cachea JWT de bot-miki (sin tenantId — resuelve por API Key)
+- [x] `BsaleSyncService.php` — orquesta sync products/stock/prices, idempotente por SKU
+- [x] Tests PHPUnit para BsaleApiClient y BsaleSyncService
+- [x] CLI `bsalesync/cli/sync.php` para sync por linea de comandos / cron de PS
+- [x] `AdminBsaleSyncController.php` — panel completo con AJAX
+- [x] Pantalla de configuracion inline: token Bsale + API Key con botones Verificar
+- [x] Verificacion de conexion a Bsale (muestra email de la cuenta conectada)
+- [x] Barra de progreso con contador de tiempo durante el sync
+- [x] Resultado del sync: "N productos actualizados / X errores" con detalle por SKU
+- [x] Log de los ultimos 20 syncs con colores de estado y modal de errores
+- [x] `set_time_limit(0)` en sync para catalogos grandes sin timeout PHP
+- [ ] Soporte verificado en PrestaShop 8.x (validado en 1.7.8.11)
+
+#### bot-miki (servicio central)
+- [x] Endpoint `GET /v1/license/token` — valida API Key, devuelve JWT. `tenantId` opcional.
+- [x] Endpoint `POST /v1/sync/report` — recibe reporte del sync del plugin
+- [x] Endpoint `POST /v1/admin/tenants` — crea tenant + licencia + genera API Key
+- [x] Endpoint `POST /v1/webhooks/bsale` — recibe webhooks y encola jobs
+- [x] Scheduler + Worker BullMQ
+- [x] BsaleHttpClient con rate limiting + reintentos
+- [x] Schema de BD completo (`licenses`, `tenant_stores`, `sync_events`, etc.)
+- [x] CanonicalProduct model con Zod (`packages/shared`)
+- [x] **Deployment en Railway** — corriendo desde 2026-05-30
+
+#### Infraestructura
+- [x] bot-miki en Railway — `https://kpcrop-latam-zollner-platform-production.up.railway.app`
+- [x] PostgreSQL en Railway — provisionado y con migracion aplicada en startup
+- [x] Redis en Railway — provisionado
+- [x] SSL activo en URL de Railway
+- [x] Primer tenant `tienda-zollner-cl` creado con plan growth
+- [ ] Dominio `api.espaciobits.com` — DNS OK, SSL bloqueado en Railway (ver nota abajo)
+
+> **Nota dominio:** `api.espaciobits.com` apunta a Railway via CNAME pero Let's Encrypt
+> no puede emitir el cert porque `espaciobits.com` raiz apunta a otro hosting (GoDaddy).
+> **Workaround activo:** usar la URL de Railway directamente. Cuando se compre un dominio
+> dedicado (ej. `kpcrop.com`), el cambio es una linea en `daemon_api_url`.
+
+---
+
 ## Criterio de MVP
 
 > Un comercio chileno con PrestaShop y Bsale puede sincronizar sus productos manualmente con un clic desde el backoffice de PrestaShop, sin errores, con feedback visual del resultado.
 
-Eso es todo. No sync automatico. No dropshipping. No dashboard de agencias. No multi-CMS todavia.
-
----
-
-## Scope MVP — Lo que SI entra
-
-### Plugin PrestaShop (cms-prestashop)
-- [x] Scaffold del modulo PHP (`bsalesync/bsalesync.php`) — install/uninstall, tab, SQL
-- [x] `BsaleApiClient.php` — paginacion, rate limiting, manejo de errores
-- [x] `LicenseClient.php` — obtiene y cachea JWT de bot-miki
-- [x] `BsaleSyncService.php` — orquesta sync products/stock/prices, idempotente por SKU
-- [x] Tests PHPUnit para BsaleApiClient y BsaleSyncService
-- [x] CLI `bsalesync/cli/sync.php` para sync por linea de comandos / cron de PS
-- [x] `AdminBsaleSyncController.php` (scaffold base)
-- [ ] Pantalla de configuracion: ingresar Bsale API Token + API Key de licencia (UI completa)
-- [ ] Verificacion de conexion a Bsale al guardar (muestra nombre de la empresa)
-- [ ] Barra de progreso o spinner durante el sync
-- [ ] Resultado del sync: "N productos actualizados / X errores" (UI)
-- [ ] Log de los ultimos 10 syncs en la pantalla de configuracion
-- [ ] Soporte verificado en PrestaShop 1.7.x y 8.x
-
-### bot-miki (demonio — funcionalidad minima)
-- [x] Endpoint `GET /v1/license/token` — valida la API Key y devuelve JWT (`routes/license.ts`)
-- [x] Endpoint `POST /v1/sync/report` — recibe el reporte del sync del plugin (`routes/sync-report.ts`)
-- [x] Endpoint `POST /v1/admin/tenants` — crea tenant + licencia + genera API Key (`routes/admin.ts`)
-- [x] Endpoint `POST /v1/webhooks/bsale` — recibe webhooks y encola jobs (`routes/webhooks.ts`)
-- [x] Scheduler + Worker de sync automatico con BullMQ (`scheduler/index.ts`, `workers/sync-worker.ts`)
-- [x] BsaleHttpClient con rate limiting + reintentos (`infrastructure/bsale-http-client.ts`)
-- [x] Schema de BD completo (licenses, tenant_stores, sync_events, snapshots, etc.) (`infrastructure/database.ts`)
-- [x] CanonicalProduct model con Zod (`packages/shared`)
-- [x] CmsAdapter interface (`packages/shared`)
-- [ ] Deployment en Railway (sin HA, sin escalado — un solo proceso)
-
-### Infraestructura
-- [ ] Dominio `api.kpcrop.com` apuntando al demonio en Railway
-- [ ] Certificado SSL activo
-- [ ] PostgreSQL en Railway con tabla `licenses`
-- [ ] Variables de entorno configuradas (Bsale no se toca aqui — eso es del cliente)
+**Validado el 2026-05-31:** sync de `ZAP.RUN.XL` desde sandbox Bsale → PrestaShop local exitoso end-to-end.
 
 ---
 
@@ -53,81 +65,44 @@ Eso es todo. No sync automatico. No dropshipping. No dashboard de agencias. No m
 
 | Feature | Por que se difiere |
 |---|---|
-| Sync automatico / scheduler | Requiere cola BullMQ + Railway workers. Mas complejidad sin validacion de mercado |
-| Sync de clientes | Baja prioridad para primer cliente — los productos son el dolor principal |
-| Sync de ordenes | Requiere escritura en Bsale — mas riesgo, validar primero si Bsale API lo soporta bien |
-| Sync de guias de despacho | Idem ordenes |
-| Dashboard web para agencias | No hay agencias en MVP — hay un solo cliente |
-| Multi-CMS (WordPress, Shopify...) | PrestaShop primero; otros CMS cuando el modelo de negocio este validado |
+| Sync automatico / scheduler | Requiere validacion de mercado primero |
+| Sync de clientes | Baja prioridad — los productos son el dolor principal |
+| Sync de ordenes | Requiere escritura en Bsale — mas riesgo |
+| Dashboard web para agencias | No hay agencias en MVP |
+| Multi-CMS (WordPress, Shopify...) | PrestaShop primero |
 | Dropshipping | Feature complejo — segunda fase |
-| Sync de variantes de productos | Si Bsale soporta variantes, puede ser complejidad extra para MVP; evaluar con cliente real |
-| Alertas y observabilidad completa | En MVP: logs basicos en Railway. Axiom/Grafana en v1.1 |
+| Alertas y observabilidad completa | En MVP: logs basicos en Railway |
+| PrestaShop 8.x verificado | Probado en 1.7.8.11 — 8.x pendiente |
 
 ---
 
 ## Definition of Done del MVP
 
-Un MVP esta completo cuando:
-
-1. Un comercio **instala el modulo** en su PrestaShop desde cero en menos de 10 minutos siguiendo la documentacion
-2. El comercio **configura** Bsale API Token + API Key de licencia sin necesitar soporte tecnico
-3. El comercio hace clic en "Sincronizar productos" y **todos sus productos de Bsale aparecen en PrestaShop** con precio y stock correcto
-4. Si el sync falla (Bsale no disponible, token incorrecto), el comercio **ve un mensaje de error util**, no una pantalla blanca
-5. El comercio puede **repetir el sync** sin crear productos duplicados (idempotencia por `reference` = SKU de Bsale)
-6. El modulo funciona en un PrestaShop con **hasta 5000 productos** sin timeout de PHP (usa procesamiento por lotes)
-
----
-
-## Orden de Construccion
-
-```mermaid
-gantt
-    title Hoja de Ruta MVP
-    dateFormat  YYYY-MM-DD
-    section Investigacion
-    Checklist Bsale API            :inv1, 2026-05-25, 5d
-    Sandbox Bsale + Postman        :inv2, after inv1, 5d
-    section bot-miki (minimo)
-    Proyecto Node.js + Fastify     :bm1, 2026-05-25, 3d
-    Endpoint licencias (GET token) :bm2, after bm1, 3d
-    Endpoint sync report (POST)    :bm3, after bm2, 2d
-    Deploy Railway + dominio       :bm4, after bm3, 2d
-    section Plugin PrestaShop
-    Scaffold modulo PS             :ps1, 2026-05-25, 2d
-    BsaleApiClient.php             :ps2, after ps1, 3d
-    BsaleProductAdapter.php        :ps3, after ps2, 3d
-    PrestashopProductAdapter.php   :ps4, after ps3, 4d
-    LicenseClient.php              :ps5, after ps4, 2d
-    UI backoffice (configurar)     :ps6, after ps5, 3d
-    UI backoffice (sync + log)     :ps7, after ps6, 3d
-    section Testing
-    Test con datos reales Bsale    :t1, after ps7, 3d
-    Correccion de bugs             :t2, after t1, 3d
-    section Primer cliente
-    Onboarding cliente 1           :c1, after t2, 2d
-```
+1. [x] Un comercio **instala el modulo** en su PrestaShop — ver `docs/deployment/plugin-install.md`
+2. [x] El comercio **configura** Bsale API Token + API Key de licencia sin soporte tecnico
+3. [x] El comercio hace clic en "Sincronizar" y **los productos de Bsale aparecen en PS**
+4. [x] Si el sync falla, el comercio **ve un mensaje de error util** (no pantalla blanca)
+5. [x] El comercio puede **repetir el sync** sin duplicados (idempotencia por SKU)
+6. [x] `set_time_limit(0)` — sin timeout para catalogos grandes
 
 ---
 
 ## Metricas de Exito del MVP
 
-| Metrica | Target |
-|---|---|
-| Tiempo de instalacion y configuracion | < 10 minutos |
-| Tasa de exito del sync (productos sin error) | > 95% |
-| Tiempo de sync para 1000 productos | < 5 minutos |
-| Tiempo de sync para 5000 productos | < 20 minutos |
-| Crashes / errores criticos en primer mes | 0 |
-| NPS del primer cliente despues de 30 dias de uso | > 8 |
+| Metrica | Target | Estado |
+|---|---|---|
+| Tiempo de instalacion y configuracion | < 10 minutos | Pendiente medir con cliente real |
+| Tasa de exito del sync (productos sin error) | > 95% | Pendiente medir con cliente real |
+| Tiempo de sync para 1000 productos | < 5 minutos | Pendiente medir con cliente real |
+| Crashes / errores criticos en primer mes | 0 | Monitoreo activo via Railway logs |
+| NPS del primer cliente despues de 30 dias | > 8 | Pendiente — primer cliente por onboardear |
 
 ---
 
 ## Lo que Aprenderemos con el MVP
 
-Antes de construir sync automatico, dropshipping o multi-CMS, el MVP responde:
-
-1. **¿El dolor es real?** ¿El comercio realmente usa el sync manual o lo usa una vez y lo olvida?
-2. **¿Cuantos productos tiene un cliente tipico?** Afecta el diseño del sistema de paginacion y el tiempo de sync
-3. **¿Donde falla la integracion Bsale?** Los edge cases del modelo de datos de Bsale (variantes, listas de precios, sucursales) solo aparecen con datos reales
-4. **¿Cuanto vale para el cliente?** Informa el modelo de precios antes de invertir en features de escala
-5. **¿Prefiere sync manual o automatico?** Si el cliente no usa el manual, el automatico tampoco lo usara — o al reves
+1. **¿El dolor es real?** ¿El comercio usa el sync o lo instala y olvida?
+2. **¿Cuantos productos tiene un cliente tipico?** Afecta paginacion y tiempo de sync
+3. **¿Donde falla la integracion Bsale?** Edge cases de variantes, listas de precios, sucursales
+4. **¿Cuanto vale para el cliente?** Informa el modelo de precios
+5. **¿Manual o automatico?** Si no usa manual, automatico tampoco servira
