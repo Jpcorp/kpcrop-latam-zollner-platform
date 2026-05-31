@@ -55,6 +55,9 @@ class AdminBsaleSyncController extends ModuleAdminController
 
     public function ajaxProcessSyncNow(): void
     {
+        set_time_limit(0);
+        ini_set('memory_limit', '256M');
+
         $entityType = Tools::getValue('entity', 'products');
 
         try {
