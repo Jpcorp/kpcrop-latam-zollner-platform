@@ -124,8 +124,7 @@ class BsaleSync extends Module
             return $this->displayError($this->l('El token de Bsale y la API Key de licencia son obligatorios.'));
         }
 
-        // Cifrar el token de Bsale antes de guardar
-        $encryptedToken = $this->encryptToken($token);
+        $encryptedToken = self::encryptToken($token);
 
         Db::getInstance()->update(
             'bsalesync_config',
@@ -307,7 +306,7 @@ class BsaleSync extends Module
 
     // ─── Cifrado de token de Bsale ────────────────────────────────────────────
 
-    private function encryptToken(string $token): string
+    public static function encryptToken(string $token): string
     {
         $key = substr(_COOKIE_KEY_, 0, 32);
         $iv  = openssl_random_pseudo_bytes(16);

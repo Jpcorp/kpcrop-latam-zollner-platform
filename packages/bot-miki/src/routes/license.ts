@@ -3,19 +3,19 @@ import { db } from '../infrastructure/database.js';
 import { signLicenseJwt } from '../domain/license.js';
 
 export async function licenseRoute(app: FastifyInstance) {
-  app.get<{ Querystring: { tenantId: string } }>(
+  app.get<{ Querystring: { tenantId?: string } }>(
     '/license/token',
     {
       schema: {
         tags: ['licencias'],
         summary: 'Obtener JWT de licencia',
-        description: 'Valida la API Key del tenant y devuelve un JWT firmado (TTL 5 min). La respuesta lleva Cache-Control para que Cloudflare la cachee 4 min en el edge.',
+        description: 'Valida la API Key del tenant y devuelve un JWT firmado (TTL 5 min). tenantId es opcional — si se omite, se resuelve desde la API Key. La respuesta lleva Cache-Control para que Cloudflare la cachee 4 min en el edge.',
         security: [{ apiKey: [] }],
         querystring: {
           type: 'object',
-          required: ['tenantId'],
+          required: [],
           properties: {
-            tenantId: { type: 'string', description: 'ID unico del tenant', example: 'dev-tenant-001' },
+            tenantId: { type: 'string', description: 'ID unico del tenant (opcional)', example: 'dev-tenant-001' },
           },
         },
         response: {
@@ -42,12 +42,11 @@ export async function licenseRoute(app: FastifyInstance) {
         return reply.code(401).send({ code: 'MISSING_API_KEY', message: 'Header X-API-Key requerido' });
       }
 
-      const license = await db
-        .selectFrom('licenses')
-        .selectAll()
-        .where('tenant_id', '=', tenantId)
-        .where('api_key', '=', apiKey)
-        .executeTakeFirst();
+      let query = db.selectFrom('licenses').selectAll().where('api_key', '=', apiKey);
+      if (tenantId) {
+        query = query.where('tenant_id', '=', tenantId);
+      }
+      const license = await query.executeTakeFirst();
 
       if (!license) {
         return reply.code(404).send({ code: 'TENANT_NOT_FOUND', message: 'Tenant no encontrado' });

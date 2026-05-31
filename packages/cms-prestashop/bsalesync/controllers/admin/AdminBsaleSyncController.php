@@ -42,11 +42,13 @@ class AdminBsaleSyncController extends ModuleAdminController
         $this->context->smarty->assign([
             'is_configured' => $isConfigured,
             'sync_logs'     => $logs,
-            'ajax_url'      => $this->context->link->getAdminLink('AdminBsaleSync'),
-            'token'         => Tools::getAdminTokenLite('AdminBsaleSync'),
+            'ajax_url'      => $this->context->link->getAdminLink('AdminBsaleSync') . '&ajax=1',
         ]);
 
-        $this->setTemplate('module:bsalesync/views/templates/admin/sync-panel.tpl');
+        $this->content = $this->context->smarty->fetch(
+            _PS_MODULE_DIR_ . 'bsalesync/views/templates/admin/sync-panel.tpl'
+        );
+        $this->context->smarty->assign(['content' => $this->content]);
     }
 
     // ─── AJAX: Sincronizacion manual ──────────────────────────────────────────
@@ -93,13 +95,22 @@ class AdminBsaleSyncController extends ModuleAdminController
 
     public function ajaxProcessVerifyBsale(): void
     {
-        $token = Tools::getValue('token');
-        if (empty($token)) {
-            $this->ajaxDie(json_encode(['success' => false, 'message' => 'Token vacio']));
+        if ((bool)Tools::getValue('use_saved')) {
+            $config = $this->getConfig();
+            $enc    = $config['bsale_api_token'] ?? '';
+            if (empty($enc)) {
+                $this->ajaxDie(json_encode(['success' => false, 'message' => 'Token no configurado']));
+            }
+            $bsaleToken = BsaleSync::decryptToken($enc);
+        } else {
+            $bsaleToken = Tools::getValue('token');
+            if (empty($bsaleToken)) {
+                $this->ajaxDie(json_encode(['success' => false, 'message' => 'Token vacio']));
+            }
         }
 
         try {
-            $client   = new BsaleApiClient($token);
+            $client   = new BsaleApiClient($bsaleToken);
             $response = $client->get('/v1/users.json', ['limit' => 1]);
             $this->ajaxDie(json_encode([
                 'success'  => true,
@@ -117,21 +128,29 @@ class AdminBsaleSyncController extends ModuleAdminController
 
     public function ajaxProcessVerifyLicense(): void
     {
-        $apiKey = Tools::getValue('api_key');
-        if (empty($apiKey)) {
-            $this->ajaxDie(json_encode(['success' => false, 'message' => 'API Key vacia']));
+        $config = $this->getConfig();
+
+        if ((bool)Tools::getValue('use_saved')) {
+            $apiKey = $config['daemon_api_key'] ?? '';
+            if (empty($apiKey)) {
+                $this->ajaxDie(json_encode(['success' => false, 'message' => 'API Key no configurada']));
+            }
+        } else {
+            $apiKey = Tools::getValue('api_key');
+            if (empty($apiKey)) {
+                $this->ajaxDie(json_encode(['success' => false, 'message' => 'API Key vacia']));
+            }
         }
 
-        $config   = $this->getConfig();
         $tenantId = md5($config['daemon_api_url'] . $apiKey);
         $client   = new LicenseClient($config['daemon_api_url'], $apiKey, $tenantId);
 
         try {
-            $token = $client->getToken();
+            $jwt = $client->getToken();
             $this->ajaxDie(json_encode([
                 'success' => true,
                 'message' => 'Licencia activa',
-                'token'   => substr($token, 0, 20) . '...',
+                'token'   => substr($jwt, 0, 20) . '...',
             ]));
         } catch (LicenseException $e) {
             $this->ajaxDie(json_encode([
@@ -139,6 +158,37 @@ class AdminBsaleSyncController extends ModuleAdminController
                 'message' => $e->getMessage(),
             ]));
         }
+    }
+
+    // ─── AJAX: Guardar configuracion ──────────────────────────────────────────
+
+    public function ajaxProcessSaveConfig(): void
+    {
+        $bsaleToken = Tools::getValue('bsale_token');
+        $apiKey     = Tools::getValue('api_key');
+
+        if (empty($bsaleToken) || empty($apiKey)) {
+            $this->ajaxDie(json_encode([
+                'success' => false,
+                'message' => 'El token de Bsale y la API Key son obligatorios.',
+            ]));
+        }
+
+        $encryptedToken = BsaleSync::encryptToken($bsaleToken);
+
+        Db::getInstance()->update(
+            'bsalesync_config',
+            [
+                'bsale_api_token' => pSQL($encryptedToken),
+                'daemon_api_key'  => pSQL($apiKey),
+            ],
+            'id_shop = ' . (int)$this->context->shop->id
+        );
+
+        $this->ajaxDie(json_encode([
+            'success' => true,
+            'message' => 'Configuracion guardada correctamente.',
+        ]));
     }
 
     // ─── Helpers privados ─────────────────────────────────────────────────────
