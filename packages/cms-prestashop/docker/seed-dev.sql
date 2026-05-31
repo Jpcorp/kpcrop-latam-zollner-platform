@@ -4,6 +4,12 @@
 --
 -- API Key: debe coincidir con el seed de bot-miki (002_seed_dev.sql)
 -- Tenant:  dev-tenant-001
+--
+-- ⚠️  CAMBIO DE URL — cuando quieras probar contra Railway en lugar de local:
+--     daemon_api_url = 'https://kpcrop-latam-zollner-platform-production.up.railway.app'
+--     daemon_api_key = 'kp_aa3bdbd46281251ae2663ffb24f72f285e1d759012b72ab9'  (tenant test-tenant-001)
+-- ⚠️  CAMBIO DE URL — cuando el dominio api.kpcrop.com esté activo en Cloudflare:
+--     daemon_api_url = 'https://api.kpcrop.com'
 
 -- Configurar bsalesync para tienda por defecto (id_shop = 1)
 UPDATE `PREFIX_bsalesync_config`
