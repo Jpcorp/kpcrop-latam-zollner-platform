@@ -12,13 +12,13 @@ El MVP es el minimo que le demuestra valor real a un primer cliente de pago. No 
 ### Checklist de completion
 
 #### Plugin PrestaShop (cms-prestashop)
-- [x] Scaffold del modulo PHP (`bsalesync/bsalesync.php`) — install/uninstall, tab, SQL
+- [x] Scaffold del modulo PHP (`synkrop/synkrop.php`) — install/uninstall, tab, SQL
 - [x] `BsaleApiClient.php` — paginacion, rate limiting, manejo de errores
 - [x] `LicenseClient.php` — obtiene y cachea JWT de bot-miki (sin tenantId — resuelve por API Key)
-- [x] `BsaleSyncService.php` — orquesta sync products/stock/prices, idempotente por SKU
-- [x] Tests PHPUnit para BsaleApiClient y BsaleSyncService
-- [x] CLI `bsalesync/cli/sync.php` para sync por linea de comandos / cron de PS
-- [x] `AdminBsaleSyncController.php` — panel completo con AJAX
+- [x] `SynkropService.php` — orquesta sync products/stock/prices, idempotente por SKU
+- [x] Tests PHPUnit para BsaleApiClient y SynkropService
+- [x] CLI `synkrop/cli/sync.php` para sync por linea de comandos / cron de PS
+- [x] `AdminSynkropController.php` — panel completo con AJAX
 - [x] Pantalla de configuracion inline: token Bsale + API Key con botones Verificar
 - [x] Verificacion de conexion a Bsale (muestra email de la cuenta conectada)
 - [x] Barra de progreso con contador de tiempo durante el sync

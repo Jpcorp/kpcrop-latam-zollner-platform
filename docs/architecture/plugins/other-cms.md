@@ -23,7 +23,7 @@ Despues de PrestaShop (MVP), los otros 5 CMS se construyen siguiendo el mismo pa
 | Aspecto | PrestaShop | WordPress/WooCommerce |
 |---|---|---|
 | Framework de plugin | `Module extends Module` | `WC_Integration` o plugin standalone |
-| Almacenamiento de config | Tabla `bsalesync_config` | `wp_options` (via `get_option`) |
+| Almacenamiento de config | Tabla `synkrop_config` | `wp_options` (via `get_option`) |
 | Jobs background | CLI o cron del servidor | `WP-Cron` o `Action Scheduler` |
 | Admin UI | HelperForm + Smarty | WC Settings API o React (Gutenberg) |
 | AJAX | Controller con `ajaxProcess*` | `wp_ajax_` hooks |
@@ -32,19 +32,19 @@ Despues de PrestaShop (MVP), los otros 5 CMS se construyen siguiendo el mismo pa
 
 ```
 packages/cms-wordpress/
-├── bsalesync-woo/
-│   ├── bsalesync-woo.php          ← Plugin header + bootstrap
+├── synkrop-woo/
+│   ├── synkrop-woo.php          ← Plugin header + bootstrap
 │   ├── includes/
-│   │   ├── class-bsalesync-woo.php        ← Clase principal
+│   │   ├── class-synkrop-woo.php        ← Clase principal
 │   │   ├── class-bsale-api-client.php     ← Igual al de PrestaShop
 │   │   ├── class-license-client.php       ← Igual al de PrestaShop
 │   │   ├── class-woo-product-adapter.php  ← Specific WooCommerce
 │   │   └── class-bsale-sync-service.php
 │   ├── admin/
-│   │   ├── class-bsalesync-admin.php
+│   │   ├── class-synkrop-admin.php
 │   │   └── views/settings-page.php
 │   └── languages/
-│       └── bsalesync-woo-es_CL.po
+│       └── synkrop-woo-es_CL.po
 ├── tests/
 └── composer.json
 ```
@@ -52,7 +52,7 @@ packages/cms-wordpress/
 ### Mapeo WooCommerce ← CanonicalProduct
 
 ```php
-// packages/cms-wordpress/bsalesync-woo/includes/class-woo-product-adapter.php
+// packages/cms-wordpress/synkrop-woo/includes/class-woo-product-adapter.php
 
 class WooProductAdapter {
     public function upsert(CanonicalProduct $canonical): int {
@@ -84,12 +84,12 @@ class WooProductAdapter {
 
 ```php
 // En lugar de tabla propia, usar wp_options:
-get_option('bsalesync_bsale_token');         // Token cifrado
-get_option('bsalesync_api_key');             // API Key de licencia
-get_option('bsalesync_price_list_id');
-get_option('bsalesync_office_id');
-get_option('bsalesync_license_jwt');
-get_option('bsalesync_license_jwt_expires');
+get_option('synkrop_bsale_token');         // Token cifrado
+get_option('synkrop_api_key');             // API Key de licencia
+get_option('synkrop_price_list_id');
+get_option('synkrop_office_id');
+get_option('synkrop_license_jwt');
+get_option('synkrop_license_jwt_expires');
 ```
 
 ### Background jobs con Action Scheduler
@@ -98,11 +98,11 @@ WooCommerce incluye **Action Scheduler** — una cola de jobs persistente en BD 
 
 ```php
 // Registrar sync automatico al activar el plugin
-as_schedule_recurring_action(time(), HOUR_IN_SECONDS, 'bsalesync_auto_sync', ['entity' => 'products']);
+as_schedule_recurring_action(time(), HOUR_IN_SECONDS, 'synkrop_auto_sync', ['entity' => 'products']);
 
 // Handler del job
-add_action('bsalesync_auto_sync', function(string $entity) {
-    $service = BsaleSyncServiceFactory::build();
+add_action('synkrop_auto_sync', function(string $entity) {
+    $service = SynkropServiceFactory::build();
     $result  = $service->sync($entity);
     // Log result...
 });
@@ -210,7 +210,7 @@ export function toJumpsellerProduct(canonical: CanonicalProduct) {
 
 ### Particularidades de Magento 2
 
-- El modulo se instala via Composer (`composer require kpcrop/bsalesync-magento`)
+- El modulo se instala via Composer (`composer require kpcrop/synkrop-magento`)
 - La arquitectura de Magento usa Dependency Injection — el adapter debe seguir este patron
 - Los productos en Magento son EAV (Entity-Attribute-Value) — mas complejo que PrestaShop
 - El sync de imagenes requiere usar el `MediaGalleryProcessor` de Magento
@@ -220,7 +220,7 @@ export function toJumpsellerProduct(canonical: CanonicalProduct) {
 ```
 packages/cms-magento/
 ├── Kpcrop/
-│   └── BsaleSync/
+│   └── Synkrop/
 │       ├── registration.php
 │       ├── etc/
 │       │   ├── module.xml

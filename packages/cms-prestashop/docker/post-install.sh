@@ -1,6 +1,6 @@
 #!/bin/bash
 # Ejecutado por el servicio ps-init después de que PrestaShop termina de instalarse.
-# Instala las tablas del módulo bsalesync y aplica el seed de desarrollo.
+# Instala las tablas del módulo synkrop y aplica el seed de desarrollo.
 # Es idempotente: puede correrse más de una vez sin romper nada.
 
 set -e
@@ -21,10 +21,10 @@ until $MYSQL -e "SHOW TABLES LIKE '${DB_PREFIX}configuration'" 2>/dev/null | gre
 done
 echo "[ps-init] ✓ PrestaShop listo"
 
-# ── Instalar tablas del módulo bsalesync ──────────────────────────────────────
-echo "[ps-init] Instalando tablas bsalesync..."
+# ── Instalar tablas del módulo synkrop ──────────────────────────────────────
+echo "[ps-init] Instalando tablas synkrop..."
 sed "s/PREFIX_/${DB_PREFIX}/g" /install.sql | $MYSQL
-echo "[ps-init] ✓ Tablas bsalesync instaladas"
+echo "[ps-init] ✓ Tablas synkrop instaladas"
 
 # ── Aplicar seed de desarrollo ────────────────────────────────────────────────
 echo "[ps-init] Aplicando seed de desarrollo..."
@@ -42,7 +42,7 @@ echo "  Pass:    Admin1234!"
 echo ""
 echo "  MySQL:   localhost:3307  (user: prestashop / prestashop_dev)"
 echo ""
-echo "  Módulo bsalesync apunta a bot-miki en localhost:3000 (DEV)"
+echo "  Módulo synkrop apunta a bot-miki en localhost:3000 (DEV)"
 echo "  API Key: kp_dev_api_key_para_desarrollo_local_no_usar_en_prod"
 echo ""
 echo "  ⚠️  Para probar contra Railway (sin bot-miki local):"

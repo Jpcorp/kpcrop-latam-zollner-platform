@@ -1,4 +1,4 @@
-# Guia de Instalacion — Modulo Bsale Sync para PrestaShop
+# Guia de Instalacion — Modulo Synkrop para PrestaShop
 
 Tiempo estimado: **8–10 minutos**
 Requisitos: PrestaShop 1.7.x · Cuenta Bsale activa · API Key de licencia kpcrop
@@ -22,7 +22,7 @@ Necesitas tener a mano:
 
 ## Paso 1 — Descargar el modulo
 
-Descarga el archivo `bsalesync-v1.0.0.zip` que te enviamos.
+Descarga el archivo `synkrop-v1.0.0.zip` que te enviamos.
 No descomprimas el archivo — PrestaShop lo necesita en formato ZIP.
 
 ---
@@ -36,18 +36,18 @@ No descomprimas el archivo — PrestaShop lo necesita en formato ZIP.
 
 3. Haz clic en el boton **Subir un modulo** (arriba a la derecha)
 
-4. Arrastra el archivo `bsalesync-v1.0.0.zip` o haz clic en el area para seleccionarlo
+4. Arrastra el archivo `synkrop-v1.0.0.zip` o haz clic en el area para seleccionarlo
 
 5. PrestaShop instalara el modulo automaticamente en unos segundos.
    Veras el mensaje **"El modulo se ha instalado correctamente"**.
 
 ---
 
-## Paso 3 — Abrir el panel de Bsale Sync
+## Paso 3 — Abrir el panel de Synkrop
 
 1. En el menu lateral, haz clic en **Catalogo**
 
-2. Aparece una nueva opcion: **Bsale Sync** — haz clic ahi
+2. Aparece una nueva opcion: **Synkrop** — haz clic ahi
 
 3. Veras el panel principal con un formulario de configuracion.
 
@@ -95,7 +95,7 @@ Haz clic en **Guardar**.
 
 ## Paso 6 — Primera sincronizacion
 
-1. Vuelve al panel **Catalogo → Bsale Sync**
+1. Vuelve al panel **Catalogo → Synkrop**
 
 2. Haz clic en el boton **Productos**
 
@@ -126,7 +126,7 @@ como inactivos. El modulo respeta el estado del producto en Bsale.
 
 ## Paso 8 — Sincronizaciones futuras
 
-Puedes volver a sincronizar en cualquier momento desde **Catalogo → Bsale Sync**.
+Puedes volver a sincronizar en cualquier momento desde **Catalogo → Synkrop**.
 La sincronizacion es **idempotente**: si un producto ya existe, lo actualiza.
 Si es nuevo, lo crea. Nunca genera duplicados.
 

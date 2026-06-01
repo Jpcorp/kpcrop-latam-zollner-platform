@@ -1,5 +1,5 @@
 -- Configuracion del modulo por tienda PrestaShop
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_config` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     `id`                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_shop`               INT UNSIGNED NOT NULL DEFAULT 1,
     `bsale_api_token`       TEXT NOT NULL DEFAULT '',
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Mapeo entre variantes Bsale y productos PrestaShop
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_product_map` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_product_map` (
     `id`                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_shop`               INT UNSIGNED NOT NULL DEFAULT 1,
     `id_product`            INT UNSIGNED NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_product_map` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Imagenes importadas (evita re-importar en cada sync)
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_images` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_images` (
     `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_product`    INT UNSIGNED NOT NULL,
     `id_image`      INT UNSIGNED NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_images` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Historial de sincronizaciones (para mostrar en backoffice)
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_log` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_log` (
     `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_shop`       INT UNSIGNED NOT NULL DEFAULT 1,
     `sync_type`     VARCHAR(20) NOT NULL DEFAULT 'manual',
@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_log` (
 
 -- Mapeo grupo de clientes PrestaShop → lista de precios Bsale
 -- Permite que mayoristas, minoristas y otros grupos vean precios distintos
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_price_group_map` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_price_group_map` (
     `id`                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_shop`               INT UNSIGNED NOT NULL DEFAULT 1,
     `id_group`              INT UNSIGNED NOT NULL,   -- id del grupo PS (ps_group)
@@ -82,4 +82,4 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_price_group_map` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Fila inicial de config para la tienda por defecto
-INSERT IGNORE INTO `PREFIX_bsalesync_config` (`id_shop`) VALUES (1);
+INSERT IGNORE INTO `PREFIX_synkrop_config` (`id_shop`) VALUES (1);

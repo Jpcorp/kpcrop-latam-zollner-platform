@@ -40,9 +40,9 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/prestashop/}
           cd packages/cms-prestashop
-          zip -r ../../bsalesync-$VERSION.zip bsalesync/ -x "*.git*" -x "tests/*"
+          zip -r ../../synkrop-$VERSION.zip synkrop/ -x "*.git*" -x "tests/*"
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: bsalesync-*.zip
+          files: synkrop-*.zip
           generate_release_notes: true

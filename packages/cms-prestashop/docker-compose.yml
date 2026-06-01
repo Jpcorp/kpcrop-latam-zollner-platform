@@ -52,7 +52,7 @@ services:
       - "8080:80"
     volumes:
       - prestashop_data:/var/www/html
-      - ./bsalesync:/var/www/html/modules/bsalesync   # módulo en modo desarrollo (edición en caliente)
+      - ./synkrop:/var/www/html/modules/synkrop   # módulo en modo desarrollo (edición en caliente)
     healthcheck:
       # PS crea este archivo al terminar la instalación
       test: ["CMD-SHELL", "[ -f /var/www/html/config/settings.inc.php ]"]
@@ -61,7 +61,7 @@ services:
       retries: 30
       start_period: 60s     # PS tarda ~3 min en instalar la primera vez
 
-  # ── Init: instala tablas bsalesync + seed ─────────────────────────────────
+  # ── Init: instala tablas synkrop + seed ─────────────────────────────────
   ps-init:
     image: mariadb:10.6
     container_name: kpcrop-ps178-init
@@ -77,7 +77,7 @@ services:
     volumes:
       - ./docker/post-install.sh:/post-install.sh:ro
       - ./docker/seed-dev.sql:/seed-dev.sql:ro
-      - ./bsalesync/sql/install.sql:/install.sql:ro
+      - ./synkrop/sql/install.sql:/install.sql:ro
     command: bash /post-install.sh
     restart: "no"           # ejecuta una sola vez; idempotente si se repite
 

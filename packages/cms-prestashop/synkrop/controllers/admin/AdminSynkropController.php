@@ -8,18 +8,18 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-require_once _PS_MODULE_DIR_ . 'bsalesync/bsalesync.php';
-require_once _PS_MODULE_DIR_ . 'bsalesync/classes/BsaleApiClient.php';
-require_once _PS_MODULE_DIR_ . 'bsalesync/classes/LicenseClient.php';
-require_once _PS_MODULE_DIR_ . 'bsalesync/classes/BsaleSyncService.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/synkrop.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/classes/BsaleApiClient.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/classes/LicenseClient.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/classes/SynkropService.php';
 
-class AdminBsaleSyncController extends ModuleAdminController
+class AdminSynkropController extends ModuleAdminController
 {
     public function __construct()
     {
         $this->bootstrap = true;
         parent::__construct();
-        $this->meta_title = $this->l('Bsale Sync');
+        $this->meta_title = $this->l('Synkrop');
     }
 
     public function initContent(): void
@@ -27,12 +27,12 @@ class AdminBsaleSyncController extends ModuleAdminController
         parent::initContent();
 
         $config = Db::getInstance()->getRow(
-            'SELECT * FROM `' . _DB_PREFIX_ . 'bsalesync_config`
+            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_config`
              WHERE id_shop = ' . (int)$this->context->shop->id
         );
 
         $logs = Db::getInstance()->executeS(
-            'SELECT * FROM `' . _DB_PREFIX_ . 'bsalesync_log`
+            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_log`
              WHERE id_shop = ' . (int)$this->context->shop->id . '
              ORDER BY created_at DESC LIMIT 20'
         );
@@ -42,11 +42,11 @@ class AdminBsaleSyncController extends ModuleAdminController
         $this->context->smarty->assign([
             'is_configured' => $isConfigured,
             'sync_logs'     => $logs,
-            'ajax_url'      => $this->context->link->getAdminLink('AdminBsaleSync') . '&ajax=1',
+            'ajax_url'      => $this->context->link->getAdminLink('AdminSynkrop') . '&ajax=1',
         ]);
 
         $this->content = $this->context->smarty->fetch(
-            _PS_MODULE_DIR_ . 'bsalesync/views/templates/admin/sync-panel.tpl'
+            _PS_MODULE_DIR_ . 'synkrop/views/templates/admin/sync-panel.tpl'
         );
         $this->context->smarty->assign(['content' => $this->content]);
     }
@@ -104,7 +104,7 @@ class AdminBsaleSyncController extends ModuleAdminController
             if (empty($enc)) {
                 $this->ajaxDie(json_encode(['success' => false, 'message' => 'Token no configurado']));
             }
-            $bsaleToken = BsaleSync::decryptToken($enc);
+            $bsaleToken = Synkrop::decryptToken($enc);
         } else {
             $bsaleToken = Tools::getValue('token');
             if (empty($bsaleToken)) {
@@ -177,10 +177,10 @@ class AdminBsaleSyncController extends ModuleAdminController
             ]));
         }
 
-        $encryptedToken = BsaleSync::encryptToken($bsaleToken);
+        $encryptedToken = Synkrop::encryptToken($bsaleToken);
 
         Db::getInstance()->update(
-            'bsalesync_config',
+            'synkrop_config',
             [
                 'bsale_api_token' => pSQL($encryptedToken),
                 'daemon_api_key'  => pSQL($apiKey),
@@ -196,7 +196,7 @@ class AdminBsaleSyncController extends ModuleAdminController
 
     // ─── Helpers privados ─────────────────────────────────────────────────────
 
-    private function buildSyncService(): BsaleSyncService
+    private function buildSyncService(): SynkropService
     {
         $config = $this->getConfig();
 
@@ -204,7 +204,7 @@ class AdminBsaleSyncController extends ModuleAdminController
             throw new RuntimeException($this->l('Configura el token de Bsale y la API Key antes de sincronizar.'));
         }
 
-        $decryptedToken = BsaleSync::decryptToken($config['bsale_api_token']);
+        $decryptedToken = Synkrop::decryptToken($config['bsale_api_token']);
         $bsale          = new BsaleApiClient($decryptedToken);
         $license        = new LicenseClient(
             $config['daemon_api_url'],
@@ -212,20 +212,20 @@ class AdminBsaleSyncController extends ModuleAdminController
             md5($config['daemon_api_url'] . $config['daemon_api_key'])
         );
 
-        return new BsaleSyncService($bsale, $license, (int)$this->context->shop->id);
+        return new SynkropService($bsale, $license, (int)$this->context->shop->id);
     }
 
     private function getConfig(): array
     {
         return Db::getInstance()->getRow(
-            'SELECT * FROM `' . _DB_PREFIX_ . 'bsalesync_config`
+            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_config`
              WHERE id_shop = ' . (int)$this->context->shop->id
         ) ?: [];
     }
 
     private function logSync(string $type, string $entity, SyncResult $result): void
     {
-        Db::getInstance()->insert('bsalesync_log', [
+        Db::getInstance()->insert('synkrop_log', [
             'id_shop'      => (int)$this->context->shop->id,
             'sync_type'    => pSQL($type),
             'entity_type'  => pSQL($entity),

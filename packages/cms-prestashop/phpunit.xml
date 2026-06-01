@@ -7,14 +7,14 @@
          stopOnFailure="false">
 
     <testsuites>
-        <testsuite name="BsaleSync Unit Tests">
+        <testsuite name="Synkrop Unit Tests">
             <directory>tests</directory>
         </testsuite>
     </testsuites>
 
     <coverage>
         <include>
-            <directory suffix=".php">bsalesync/classes</directory>
+            <directory suffix=".php">synkrop/classes</directory>
         </include>
     </coverage>
 </phpunit>

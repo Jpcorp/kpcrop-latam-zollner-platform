@@ -8,7 +8,7 @@ Plataforma hub-and-spoke que conecta tiendas en cualquier CMS (PrestaShop, WooCo
 kpcrop-latam-zollner-platform/
 ├── packages/
 │   ├── bot-miki/          # Servicio central: API de licencias, webhook Bsale, scheduler, cola BullMQ
-│   ├── cms-prestashop/    # Módulo PrestaShop (bsalesync) — sync manual + CLI
+│   ├── cms-prestashop/    # Módulo PrestaShop (synkrop) — sync manual + CLI
 │   ├── cms-shopify/       # App Shopify (en desarrollo)
 │   ├── cms-wordpress/     # Plugin WordPress/WooCommerce (en desarrollo)
 │   └── shared/            # Modelos canónicos y contratos TypeScript (@kpcrop/shared)
@@ -58,7 +58,7 @@ pnpm clean                          # Limpiar todos los dist/ y node_modules
 
 ## Entorno PrestaShop local
 
-El plugin `bsalesync` incluye su propio stack Docker:
+El plugin `synkrop` incluye su propio stack Docker:
 
 ```bash
 cd packages/cms-prestashop
@@ -67,7 +67,7 @@ docker compose up -d          # PrestaShop 1.7.8 en http://localhost:8080
                                # MySQL en localhost:3307 (prestashop / prestashop_dev)
 ```
 
-El módulo se monta como volumen (`./bsalesync → /var/www/html/modules/bsalesync`) para edición en vivo.
+El módulo se monta como volumen (`./synkrop → /var/www/html/modules/synkrop`) para edición en vivo.
 
 ## Variables de entorno (bot-miki)
 

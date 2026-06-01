@@ -103,7 +103,7 @@ Indice de toda la documentacion tecnica del proyecto.
 | [Wireframes PrestaShop](./design/wireframes-prestashop.md) | Wireframes del backoffice del plugin |
 | [Testing](./testing/README.md) | Estrategia de testing, PHPUnit (PHP), Vitest (TS) |
 | [Deployment](./deployment/README.md) | Guia de despliegue en Railway |
-| [Instalacion del Plugin](./deployment/plugin-install.md) | Guia para el cliente final — instalar y configurar bsalesync en PS |
+| [Instalacion del Plugin](./deployment/plugin-install.md) | Guia para el cliente final — instalar y configurar synkrop en PS |
 | [Config de Produccion](./deployment/production-config.md) | IDs de Railway, URLs, tenants activos (no-secrets) |
 
 ---

@@ -96,7 +96,7 @@ erDiagram
 
 ```mermaid
 erDiagram
-    BSALESYNC_CONFIG {
+    SYNKROP_CONFIG {
         int id PK
         int id_shop "ID de la tienda PrestaShop (multishop)"
         text bsale_api_token "token de Bsale (cifrado con AES)"
@@ -118,7 +118,7 @@ erDiagram
         int last_sync_count
     }
 
-    BSALESYNC_PRODUCT_MAP {
+    SYNKROP_PRODUCT_MAP {
         int id PK
         int id_shop
         int id_product "ID de producto en PrestaShop"
@@ -129,7 +129,7 @@ erDiagram
         datetime last_synced_at
     }
 
-    BSALESYNC_IMAGES {
+    SYNKROP_IMAGES {
         int id PK
         int id_product "ID de producto en PrestaShop"
         int id_image "ID de imagen en PrestaShop"
@@ -137,7 +137,7 @@ erDiagram
         datetime imported_at
     }
 
-    BSALESYNC_LOG {
+    SYNKROP_LOG {
         int id PK
         int id_shop
         varchar sync_type "manual|auto|webhook"
@@ -150,9 +150,9 @@ erDiagram
         datetime created_at
     }
 
-    BSALESYNC_CONFIG ||--o{ BSALESYNC_PRODUCT_MAP : "mapea"
-    BSALESYNC_CONFIG ||--o{ BSALESYNC_LOG : "registra"
-    BSALESYNC_PRODUCT_MAP ||--o{ BSALESYNC_IMAGES : "tiene"
+    SYNKROP_CONFIG ||--o{ SYNKROP_PRODUCT_MAP : "mapea"
+    SYNKROP_CONFIG ||--o{ SYNKROP_LOG : "registra"
+    SYNKROP_PRODUCT_MAP ||--o{ SYNKROP_IMAGES : "tiene"
 ```
 
 ---
@@ -263,9 +263,9 @@ CREATE INDEX idx_snapshots_tenant ON bsale_variant_snapshots (tenant_id);
 ```mermaid
 flowchart LR
     subgraph PS["Servidor del Cliente (MySQL)"]
-        PC["bsalesync_config\n(token Bsale, API key licencia)"]
-        PM["bsalesync_product_map\n(PS id ↔ Bsale variant_id)"]
-        PL["bsalesync_log\n(historial local)"]
+        PC["synkrop_config\n(token Bsale, API key licencia)"]
+        PM["synkrop_product_map\n(PS id ↔ Bsale variant_id)"]
+        PL["synkrop_log\n(historial local)"]
     end
 
     subgraph BM["Demonio bot-miki (PostgreSQL)"]
@@ -294,4 +294,4 @@ flowchart LR
 **Plugin PrestaShop (MySQL):**
 - `bsale_api_token` se cifra con `openssl_encrypt()` usando la `_COOKIE_KEY_` de PrestaShop como clave
 - El `daemon_api_key` se almacena tal cual (es la clave del tenant, no un secreto critico)
-- La tabla `bsalesync_config` no debe ser accesible desde el front-end de la tienda
+- La tabla `synkrop_config` no debe ser accesible desde el front-end de la tienda

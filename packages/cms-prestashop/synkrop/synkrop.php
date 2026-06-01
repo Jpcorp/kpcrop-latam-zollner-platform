@@ -1,6 +1,6 @@
 <?php
 /**
- * BsaleSync — Plugin PrestaShop para sincronizar con Bsale ERP/POS
+ * Synkrop — Plugin PrestaShop para sincronizar con Bsale ERP/POS
  * Conecta productos, precios y stock desde Bsale a tu tienda PrestaShop.
  */
 
@@ -11,13 +11,13 @@ if (!defined('_PS_VERSION_')) {
 // Autoload de clases del modulo
 require_once __DIR__ . '/classes/BsaleApiClient.php';
 require_once __DIR__ . '/classes/LicenseClient.php';
-require_once __DIR__ . '/classes/BsaleSyncService.php';
+require_once __DIR__ . '/classes/SynkropService.php';
 
-class BsaleSync extends Module
+class Synkrop extends Module
 {
     public function __construct()
     {
-        $this->name          = 'bsalesync';
+        $this->name          = 'synkrop';
         $this->tab           = 'administration';
         $this->version       = '1.0.0';
         $this->author        = 'kpcrop-latam';
@@ -27,9 +27,9 @@ class BsaleSync extends Module
 
         parent::__construct();
 
-        $this->displayName = $this->l('Bsale Sync');
+        $this->displayName = $this->l('Synkrop');
         $this->description = $this->l('Sincroniza productos, precios y stock desde Bsale ERP a tu tienda PrestaShop.');
-        $this->confirmUninstall = $this->l('¿Seguro que quieres desinstalar BsaleSync? Se eliminaran todos los datos de configuracion.');
+        $this->confirmUninstall = $this->l('¿Seguro que quieres desinstalar Synkrop? Se eliminaran todos los datos de configuracion.');
     }
 
     // ─── Instalacion ──────────────────────────────────────────────────────────
@@ -52,13 +52,13 @@ class BsaleSync extends Module
     {
         $tab = new Tab();
         $tab->active     = 1;
-        $tab->class_name = 'AdminBsaleSync';
+        $tab->class_name = 'AdminSynkrop';
         $tab->icon       = 'sync';
         $tab->module     = $this->name;
         $tab->id_parent  = (int)Tab::getIdFromClassName('AdminCatalog');
 
         foreach (Language::getLanguages(true) as $lang) {
-            $tab->name[$lang['id_lang']] = 'Bsale Sync';
+            $tab->name[$lang['id_lang']] = 'Synkrop';
         }
 
         return $tab->add();
@@ -66,7 +66,7 @@ class BsaleSync extends Module
 
     private function uninstallTab(): bool
     {
-        $idTab = (int)Tab::getIdFromClassName('AdminBsaleSync');
+        $idTab = (int)Tab::getIdFromClassName('AdminSynkrop');
         if (!$idTab) return true;
         $tab = new Tab($idTab);
         return $tab->delete();
@@ -102,7 +102,7 @@ class BsaleSync extends Module
     {
         $output = '';
 
-        if (Tools::isSubmit('submit_bsalesync_config')) {
+        if (Tools::isSubmit('submit_synkrop_config')) {
             $output .= $this->saveConfig();
         }
 
@@ -115,10 +115,10 @@ class BsaleSync extends Module
 
     private function saveConfig(): string
     {
-        $token     = Tools::getValue('BSALESYNC_BSALE_TOKEN');
-        $apiKey    = Tools::getValue('BSALESYNC_API_KEY');
-        $priceList = (int)Tools::getValue('BSALESYNC_PRICE_LIST_ID');
-        $officeId  = (int)Tools::getValue('BSALESYNC_OFFICE_ID');
+        $token     = Tools::getValue('SYNKROP_BSALE_TOKEN');
+        $apiKey    = Tools::getValue('SYNKROP_API_KEY');
+        $priceList = (int)Tools::getValue('SYNKROP_PRICE_LIST_ID');
+        $officeId  = (int)Tools::getValue('SYNKROP_OFFICE_ID');
 
         if (empty($token) || empty($apiKey)) {
             return $this->displayError($this->l('El token de Bsale y la API Key de licencia son obligatorios.'));
@@ -127,7 +127,7 @@ class BsaleSync extends Module
         $encryptedToken = self::encryptToken($token);
 
         Db::getInstance()->update(
-            'bsalesync_config',
+            'synkrop_config',
             [
                 'bsale_api_token'     => pSQL($encryptedToken),
                 'bsale_price_list_id' => $priceList,
@@ -144,12 +144,12 @@ class BsaleSync extends Module
     {
         $fields = [
             'form' => [
-                'legend' => ['title' => $this->l('Configuracion de Bsale Sync'), 'icon' => 'icon-cogs'],
+                'legend' => ['title' => $this->l('Configuracion de Synkrop'), 'icon' => 'icon-cogs'],
                 'input' => [
                     [
                         'type'     => 'text',
                         'label'    => $this->l('Token de acceso Bsale'),
-                        'name'     => 'BSALESYNC_BSALE_TOKEN',
+                        'name'     => 'SYNKROP_BSALE_TOKEN',
                         'required' => true,
                         'desc'     => $this->l('Obtenlo en: Bsale > Mi cuenta > Integraciones'),
                         'class'    => 'fixed-width-xxl',
@@ -157,7 +157,7 @@ class BsaleSync extends Module
                     [
                         'type'     => 'text',
                         'label'    => $this->l('API Key de licencia kpcrop'),
-                        'name'     => 'BSALESYNC_API_KEY',
+                        'name'     => 'SYNKROP_API_KEY',
                         'required' => true,
                         'desc'     => $this->l('Tu clave de licencia kpcrop (formato: kp_...)'),
                         'class'    => 'fixed-width-xxl',
@@ -165,13 +165,13 @@ class BsaleSync extends Module
                     [
                         'type'  => 'text',
                         'label' => $this->l('ID de lista de precios Bsale'),
-                        'name'  => 'BSALESYNC_PRICE_LIST_ID',
+                        'name'  => 'SYNKROP_PRICE_LIST_ID',
                         'desc'  => $this->l('Ingresa el ID de la lista de precios a sincronizar (ej: 1)'),
                     ],
                     [
                         'type'  => 'text',
                         'label' => $this->l('ID de sucursal (stock)'),
-                        'name'  => 'BSALESYNC_OFFICE_ID',
+                        'name'  => 'SYNKROP_OFFICE_ID',
                         'desc'  => $this->l('Deja en blanco para sumar stock de todas las sucursales'),
                     ],
                 ],
@@ -180,7 +180,7 @@ class BsaleSync extends Module
         ];
 
         $config = Db::getInstance()->getRow(
-            'SELECT * FROM `' . _DB_PREFIX_ . 'bsalesync_config` WHERE id_shop = ' . (int)$this->context->shop->id
+            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_config` WHERE id_shop = ' . (int)$this->context->shop->id
         );
 
         $helper = new HelperForm();
@@ -189,14 +189,14 @@ class BsaleSync extends Module
         $helper->module            = $this;
         $helper->default_form_language = $this->context->language->id;
         $helper->identifier        = $this->identifier;
-        $helper->submit_action     = 'submit_bsalesync_config';
+        $helper->submit_action     = 'submit_synkrop_config';
         $helper->currentIndex      = $this->context->link->getAdminLink('AdminModules') . '&configure=' . $this->name;
         $helper->token             = Tools::getAdminTokenLite('AdminModules');
         $helper->fields_value      = [
-            'BSALESYNC_BSALE_TOKEN'    => '',  // Nunca pre-llenar el token
-            'BSALESYNC_API_KEY'        => $config['daemon_api_key'] ?? '',
-            'BSALESYNC_PRICE_LIST_ID'  => $config['bsale_price_list_id'] ?? '',
-            'BSALESYNC_OFFICE_ID'      => $config['bsale_office_id'] ?? '',
+            'SYNKROP_BSALE_TOKEN'    => '',  // Nunca pre-llenar el token
+            'SYNKROP_API_KEY'        => $config['daemon_api_key'] ?? '',
+            'SYNKROP_PRICE_LIST_ID'  => $config['bsale_price_list_id'] ?? '',
+            'SYNKROP_OFFICE_ID'      => $config['bsale_office_id'] ?? '',
         ];
 
         return $helper->generateForm([$fields]);
@@ -210,7 +210,7 @@ class BsaleSync extends Module
 
         $maps = Db::getInstance()->executeS(
             'SELECT id_group, bsale_price_list_id, active
-             FROM `' . _DB_PREFIX_ . 'bsalesync_price_group_map`
+             FROM `' . _DB_PREFIX_ . 'synkrop_price_group_map`
              WHERE id_shop = ' . (int)$this->context->shop->id
         );
 
@@ -275,14 +275,14 @@ class BsaleSync extends Module
 
             if ($priceListId <= 0) {
                 Db::getInstance()->delete(
-                    'bsalesync_price_group_map',
+                    'synkrop_price_group_map',
                     'id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
                 );
                 continue;
             }
 
             $exists = Db::getInstance()->getValue(
-                'SELECT id FROM `' . _DB_PREFIX_ . 'bsalesync_price_group_map`
+                'SELECT id FROM `' . _DB_PREFIX_ . 'synkrop_price_group_map`
                  WHERE id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
             );
 
@@ -290,14 +290,14 @@ class BsaleSync extends Module
 
             if ($exists) {
                 Db::getInstance()->update(
-                    'bsalesync_price_group_map',
+                    'synkrop_price_group_map',
                     $data,
                     'id_group = ' . $idGroup . ' AND id_shop = ' . $idShop
                 );
             } else {
                 $data['id_group'] = $idGroup;
                 $data['id_shop']  = $idShop;
-                Db::getInstance()->insert('bsalesync_price_group_map', $data);
+                Db::getInstance()->insert('synkrop_price_group_map', $data);
             }
         }
 

@@ -22,7 +22,7 @@ class LicenseClient
     }
 
     /**
-     * Devuelve el JWT de licencia. Usa cache local (tabla bsalesync_config) si no expiro.
+     * Devuelve el JWT de licencia. Usa cache local (tabla synkrop_config) si no expiro.
      * @throws LicenseException Si la licencia no es valida o esta expirada
      */
     public function getToken(): string
@@ -51,7 +51,7 @@ class LicenseClient
     private function getCachedJwt(): ?string
     {
         $config = Db::getInstance()->getRow(
-            'SELECT license_jwt, license_jwt_expires FROM `' . _DB_PREFIX_ . 'bsalesync_config`
+            'SELECT license_jwt, license_jwt_expires FROM `' . _DB_PREFIX_ . 'synkrop_config`
              WHERE id_shop = ' . (int)Context::getContext()->shop->id
         );
 
@@ -97,7 +97,7 @@ class LicenseClient
 
         // Guardar JWT en la tabla de config del modulo (Db::update auto-agrega _DB_PREFIX_)
         Db::getInstance()->update(
-            'bsalesync_config',
+            'synkrop_config',
             [
                 'license_jwt'         => pSQL($data['token']),
                 'license_jwt_expires' => pSQL($data['expiresAt']),

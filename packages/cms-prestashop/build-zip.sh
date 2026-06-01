@@ -1,5 +1,5 @@
 #!/bin/bash
-# Genera el ZIP instalable del módulo bsalesync para PrestaShop.
+# Genera el ZIP instalable del módulo synkrop para PrestaShop.
 # Uso: bash build-zip.sh [version]
 # Ejemplo: bash build-zip.sh 1.0.1
 #
@@ -9,13 +9,13 @@
 set -e
 
 VERSION="${1:-1.0.0}"
-OUT="bsalesync-v${VERSION}.zip"
-MODULE="bsalesync"
+OUT="synkrop-v${VERSION}.zip"
+MODULE="synkrop"
 
-# Leer version desde bsalesync.php si no se pasa argumento
+# Leer version desde synkrop.php si no se pasa argumento
 if [ -z "$1" ]; then
-    VERSION=$(grep "\$this->version" ${MODULE}/bsalesync.php | grep -o "'[^']*'" | tr -d "'")
-    OUT="bsalesync-v${VERSION}.zip"
+    VERSION=$(grep "\$this->version" ${MODULE}/synkrop.php | grep -o "'[^']*'" | tr -d "'")
+    OUT="synkrop-v${VERSION}.zip"
 fi
 
 echo "Generando ${OUT}..."
