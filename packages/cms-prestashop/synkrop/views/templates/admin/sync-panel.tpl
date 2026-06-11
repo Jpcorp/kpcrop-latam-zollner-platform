@@ -3,12 +3,12 @@
   Variables: is_configured, sync_logs, ajax_url, token
 *}
 
-<div class="panel" id="bsalesync-app">
+<div class="panel" id="synkrop-app">
   <div class="panel-heading">
-    <i class="icon-refresh"></i>&nbsp;{l s='Bsale Sync' mod='bsalesync'}
+    <i class="icon-refresh"></i>&nbsp;{l s='Synkrop' mod='synkrop'}
     <span class="panel-heading-action">
-      <a class="list-toolbar-btn" href="{$link->getAdminLink('AdminModules')}&configure=bsalesync">
-        <i class="process-icon-configure"></i>&nbsp;{l s='Configuracion avanzada' mod='bsalesync'}
+      <a class="list-toolbar-btn" href="{$link->getAdminLink('AdminModules')}&configure=synkrop">
+        <i class="process-icon-configure"></i>&nbsp;{l s='Configuracion avanzada' mod='synkrop'}
       </a>
     </span>
   </div>
@@ -18,28 +18,28 @@
   {if !$is_configured}
   <div class="panel" style="border-left:4px solid #f0ad4e;margin:0 0 15px">
     <div class="panel-heading" style="background:#fdf8ef;color:#8a6d3b">
-      <i class="icon-warning-sign"></i>&nbsp;{l s='Configuracion requerida' mod='bsalesync'}
+      <i class="icon-warning-sign"></i>&nbsp;{l s='Configuracion requerida' mod='synkrop'}
     </div>
     <div class="panel-body">
       <p class="text-muted" style="margin-bottom:18px">
-        {l s='Ingresa tus credenciales para activar la sincronizacion con Bsale.' mod='bsalesync'}
+        {l s='Ingresa tus credenciales para activar la sincronizacion con Bsale.' mod='synkrop'}
       </p>
 
       <div class="row">
         <div class="col-md-6">
           <div class="form-group">
             <label class="control-label">
-              {l s='Token de acceso Bsale' mod='bsalesync'}
+              {l s='Token de acceso Bsale' mod='synkrop'}
               <span class="required">&nbsp;*</span>
             </label>
             <div class="input-group">
               <span class="input-group-addon"><i class="icon-key"></i></span>
               <input type="password" id="bs-bsale-token" class="form-control"
-                     placeholder="{l s='Bsale > Mi cuenta > Integraciones' mod='bsalesync'}"
+                     placeholder="{l s='Bsale > Mi cuenta > Integraciones' mod='synkrop'}"
                      autocomplete="new-password">
               <span class="input-group-btn">
                 <button class="btn btn-default" id="bs-verify-bsale-btn" type="button">
-                  <i class="icon-check"></i>&nbsp;{l s='Verificar' mod='bsalesync'}
+                  <i class="icon-check"></i>&nbsp;{l s='Verificar' mod='synkrop'}
                 </button>
               </span>
             </div>
@@ -50,7 +50,7 @@
         <div class="col-md-6">
           <div class="form-group">
             <label class="control-label">
-              {l s='API Key de licencia kpcrop' mod='bsalesync'}
+              {l s='API Key de licencia kpcrop' mod='synkrop'}
               <span class="required">&nbsp;*</span>
             </label>
             <div class="input-group">
@@ -58,7 +58,7 @@
               <input type="text" id="bs-api-key" class="form-control" placeholder="kp_...">
               <span class="input-group-btn">
                 <button class="btn btn-default" id="bs-verify-license-btn" type="button">
-                  <i class="icon-check"></i>&nbsp;{l s='Verificar' mod='bsalesync'}
+                  <i class="icon-check"></i>&nbsp;{l s='Verificar' mod='synkrop'}
                 </button>
               </span>
             </div>
@@ -68,7 +68,7 @@
       </div>
 
       <button class="btn btn-primary" id="bs-save-config-btn" type="button">
-        <i class="icon-save"></i>&nbsp;{l s='Guardar configuracion' mod='bsalesync'}
+        <i class="icon-save"></i>&nbsp;{l s='Guardar configuracion' mod='synkrop'}
       </button>
       <span id="bs-save-status" class="help-block"
             style="display:inline-block;margin-left:12px;vertical-align:middle"></span>
@@ -79,60 +79,60 @@
   <div class="alert alert-success"
        style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:15px">
     <i class="icon-check-circle" style="font-size:18px"></i>
-    <span><strong>{l s='Conexion configurada' mod='bsalesync'}</strong></span>
-    <span id="bs-bsale-badge"   class="label label-default">Bsale: {l s='sin verificar' mod='bsalesync'}</span>
-    <span id="bs-license-badge" class="label label-default">{l s='Licencia: sin verificar' mod='bsalesync'}</span>
+    <span><strong>{l s='Conexion configurada' mod='synkrop'}</strong></span>
+    <span id="bs-bsale-badge"   class="label label-default">Bsale: {l s='sin verificar' mod='synkrop'}</span>
+    <span id="bs-license-badge" class="label label-default">{l s='Licencia: sin verificar' mod='synkrop'}</span>
     <span style="flex:1"></span>
     <button class="btn btn-xs btn-default" id="bs-check-connections-btn" type="button">
-      <i class="icon-refresh"></i>&nbsp;{l s='Verificar conexiones' mod='bsalesync'}
+      <i class="icon-refresh"></i>&nbsp;{l s='Verificar conexiones' mod='synkrop'}
     </button>
   </div>
   {/if}
 
   {* ── SYNC MANUAL ────────────────────────────────────────────────────── *}
 
-  <div class="row" id="bsalesync-panel"
+  <div class="row" id="synkrop-panel"
        {if !$is_configured}style="opacity:0.5;pointer-events:none;user-select:none"{/if}>
 
     <div class="col-md-8">
       <div class="panel panel-default">
         <div class="panel-heading">
-          <i class="icon-upload"></i>&nbsp;{l s='Sincronizacion manual' mod='bsalesync'}
+          <i class="icon-upload"></i>&nbsp;{l s='Sincronizacion manual' mod='synkrop'}
         </div>
         <div class="panel-body">
           <p class="text-muted small" style="margin-bottom:12px">
-            {l s='Selecciona que deseas sincronizar desde Bsale hacia PrestaShop.' mod='bsalesync'}
+            {l s='Selecciona que deseas sincronizar desde Bsale hacia PrestaShop.' mod='synkrop'}
           </p>
 
           <div class="btn-group" role="group">
             <button class="btn btn-primary btn-sync" data-entity="products"
-                    title="{l s='Importar y actualizar productos' mod='bsalesync'}">
-              <i class="icon-archive"></i>&nbsp;{l s='Productos' mod='bsalesync'}
+                    title="{l s='Importar y actualizar productos' mod='synkrop'}">
+              <i class="icon-archive"></i>&nbsp;{l s='Productos' mod='synkrop'}
             </button>
             <button class="btn btn-default btn-sync" data-entity="stock"
-                    title="{l s='Actualizar stock de productos existentes' mod='bsalesync'}">
-              <i class="icon-signal"></i>&nbsp;{l s='Stock' mod='bsalesync'}
+                    title="{l s='Actualizar stock de productos existentes' mod='synkrop'}">
+              <i class="icon-signal"></i>&nbsp;{l s='Stock' mod='synkrop'}
             </button>
             <button class="btn btn-default btn-sync" data-entity="prices"
-                    title="{l s='Actualizar precios de productos existentes' mod='bsalesync'}">
-              <i class="icon-tag"></i>&nbsp;{l s='Precios' mod='bsalesync'}
+                    title="{l s='Actualizar precios de productos existentes' mod='synkrop'}">
+              <i class="icon-tag"></i>&nbsp;{l s='Precios' mod='synkrop'}
             </button>
           </div>
 
-          <div id="bsalesync-progress" class="hidden" style="margin-top:16px">
+          <div id="synkrop-progress" class="hidden" style="margin-top:16px">
             <div class="progress" style="margin-bottom:4px">
               <div class="progress-bar progress-bar-striped active" role="progressbar" style="width:100%">
-                <span id="bs-progress-label">{l s='Sincronizando...' mod='bsalesync'}</span>
+                <span id="bs-progress-label">{l s='Sincronizando...' mod='synkrop'}</span>
               </div>
             </div>
             <small class="text-muted">
               <i class="icon-clock-o"></i>&nbsp;
-              {l s='Tiempo transcurrido:' mod='bsalesync'}
+              {l s='Tiempo transcurrido:' mod='synkrop'}
               <strong><span id="bs-elapsed">0</span>s</strong>
             </small>
           </div>
 
-          <div id="bsalesync-result" class="hidden" style="margin-top:16px"></div>
+          <div id="synkrop-result" class="hidden" style="margin-top:16px"></div>
         </div>
       </div>
     </div>
@@ -140,7 +140,7 @@
     <div class="col-md-4">
       <div class="panel panel-default">
         <div class="panel-heading">
-          <i class="icon-info-sign"></i>&nbsp;{l s='Ultimo sync' mod='bsalesync'}
+          <i class="icon-info-sign"></i>&nbsp;{l s='Ultimo sync' mod='synkrop'}
         </div>
         <div class="panel-body" style="padding:0">
           {if $sync_logs}
@@ -148,42 +148,42 @@
             <table class="table table-condensed" style="margin-bottom:0">
               <tr>
                 <td class="text-muted" style="width:45%;padding-left:12px">
-                  {l s='Fecha' mod='bsalesync'}
+                  {l s='Fecha' mod='synkrop'}
                 </td>
                 <td><small>{$last.created_at}</small></td>
               </tr>
               <tr>
-                <td class="text-muted" style="padding-left:12px">{l s='Tipo' mod='bsalesync'}</td>
+                <td class="text-muted" style="padding-left:12px">{l s='Tipo' mod='synkrop'}</td>
                 <td>
                   {if $last.sync_type == 'manual'}
-                    <span class="label label-info">{l s='Manual' mod='bsalesync'}</span>
+                    <span class="label label-info">{l s='Manual' mod='synkrop'}</span>
                   {else}
-                    <span class="label label-default">{l s='Auto' mod='bsalesync'}</span>
+                    <span class="label label-default">{l s='Auto' mod='synkrop'}</span>
                   {/if}
                   &nbsp;{$last.entity_type|capitalize}
                 </td>
               </tr>
               <tr>
-                <td class="text-muted" style="padding-left:12px">{l s='Estado' mod='bsalesync'}</td>
+                <td class="text-muted" style="padding-left:12px">{l s='Estado' mod='synkrop'}</td>
                 <td>
                   {if $last.status == 'success'}
                     <span class="label label-success"><i class="icon-ok"></i>&nbsp;OK</span>
                   {elseif $last.status == 'partial'}
-                    <span class="label label-warning">{l s='Parcial' mod='bsalesync'}</span>
+                    <span class="label label-warning">{l s='Parcial' mod='synkrop'}</span>
                   {else}
-                    <span class="label label-danger">{l s='Error' mod='bsalesync'}</span>
+                    <span class="label label-danger">{l s='Error' mod='synkrop'}</span>
                   {/if}
                 </td>
               </tr>
               <tr>
                 <td class="text-muted" style="padding-left:12px">
-                  {l s='Actualizados' mod='bsalesync'}
+                  {l s='Actualizados' mod='synkrop'}
                 </td>
                 <td><strong class="text-success">{$last.records_ok}</strong></td>
               </tr>
               <tr>
                 <td class="text-muted" style="padding-left:12px">
-                  {l s='Errores' mod='bsalesync'}
+                  {l s='Errores' mod='synkrop'}
                 </td>
                 <td>
                   <strong class="{if $last.records_fail > 0}text-danger{else}text-success{/if}">
@@ -193,7 +193,7 @@
               </tr>
               <tr>
                 <td class="text-muted" style="padding-left:12px">
-                  {l s='Duracion' mod='bsalesync'}
+                  {l s='Duracion' mod='synkrop'}
                 </td>
                 <td>{($last.duration_ms / 1000)|string_format:"%.1f"}s</td>
               </tr>
@@ -201,7 +201,7 @@
           {else}
             <div class="text-center text-muted" style="padding:28px 12px">
               <i class="icon-clock-o" style="font-size:28px;display:block;margin-bottom:8px"></i>
-              <p style="margin:0">{l s='Sin sincronizaciones aun.' mod='bsalesync'}</p>
+              <p style="margin:0">{l s='Sin sincronizaciones aun.' mod='synkrop'}</p>
             </div>
           {/if}
         </div>
@@ -215,7 +215,7 @@
     <div class="col-md-12">
       <div class="panel panel-default">
         <div class="panel-heading">
-          <i class="icon-list"></i>&nbsp;{l s='Historial de sincronizaciones' mod='bsalesync'}
+          <i class="icon-list"></i>&nbsp;{l s='Historial de sincronizaciones' mod='synkrop'}
           {if $sync_logs}
             <span class="badge" style="margin-left:6px">{$sync_logs|count}</span>
           {/if}
@@ -225,13 +225,13 @@
             <table class="table table-hover table-condensed" style="margin-bottom:0">
               <thead>
                 <tr>
-                  <th>{l s='Fecha' mod='bsalesync'}</th>
-                  <th>{l s='Disparador' mod='bsalesync'}</th>
-                  <th>{l s='Entidad' mod='bsalesync'}</th>
-                  <th>{l s='Estado' mod='bsalesync'}</th>
-                  <th class="text-right">{l s='OK' mod='bsalesync'}</th>
-                  <th class="text-right">{l s='Errores' mod='bsalesync'}</th>
-                  <th class="text-right">{l s='Duracion' mod='bsalesync'}</th>
+                  <th>{l s='Fecha' mod='synkrop'}</th>
+                  <th>{l s='Disparador' mod='synkrop'}</th>
+                  <th>{l s='Entidad' mod='synkrop'}</th>
+                  <th>{l s='Estado' mod='synkrop'}</th>
+                  <th class="text-right">{l s='OK' mod='synkrop'}</th>
+                  <th class="text-right">{l s='Errores' mod='synkrop'}</th>
+                  <th class="text-right">{l s='Duracion' mod='synkrop'}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -241,9 +241,9 @@
                   <td><small>{$log.created_at}</small></td>
                   <td>
                     {if $log.sync_type == 'manual'}
-                      <span class="label label-info">{l s='Manual' mod='bsalesync'}</span>
+                      <span class="label label-info">{l s='Manual' mod='synkrop'}</span>
                     {else}
-                      <span class="label label-default">{l s='Auto' mod='bsalesync'}</span>
+                      <span class="label label-default">{l s='Auto' mod='synkrop'}</span>
                     {/if}
                   </td>
                   <td>{$log.entity_type|capitalize}</td>
@@ -251,9 +251,9 @@
                     {if $log.status == 'success'}
                       <span class="label label-success">OK</span>
                     {elseif $log.status == 'partial'}
-                      <span class="label label-warning">{l s='Parcial' mod='bsalesync'}</span>
+                      <span class="label label-warning">{l s='Parcial' mod='synkrop'}</span>
                     {else}
-                      <span class="label label-danger">{l s='Error' mod='bsalesync'}</span>
+                      <span class="label label-danger">{l s='Error' mod='synkrop'}</span>
                     {/if}
                   </td>
                   <td class="text-right">{$log.records_ok}</td>
@@ -265,7 +265,7 @@
                     {if $log.error_details}
                       <button class="btn btn-xs btn-default bs-show-errors"
                               data-errors="{$log.error_details|escape:'html'}"
-                              title="{l s='Ver errores' mod='bsalesync'}">
+                              title="{l s='Ver errores' mod='synkrop'}">
                         <i class="icon-search"></i>
                       </button>
                     {/if}
@@ -277,7 +277,7 @@
           {else}
             <div class="text-center text-muted" style="padding:40px">
               <i class="icon-history" style="font-size:36px;display:block;margin-bottom:10px"></i>
-              <p>{l s='Sin sincronizaciones registradas.' mod='bsalesync'}</p>
+              <p>{l s='Sin sincronizaciones registradas.' mod='synkrop'}</p>
             </div>
           {/if}
         </div>
@@ -298,13 +298,13 @@
         </button>
         <h4 class="modal-title">
           <i class="icon-exclamation-triangle text-danger"></i>&nbsp;
-          {l s='Detalle de errores' mod='bsalesync'}
+          {l s='Detalle de errores' mod='synkrop'}
         </h4>
       </div>
       <div class="modal-body" id="bs-errors-modal-body"></div>
       <div class="modal-footer">
         <button type="button" class="btn btn-default" data-dismiss="modal">
-          {l s='Cerrar' mod='bsalesync'}
+          {l s='Cerrar' mod='synkrop'}
         </button>
       </div>
     </div>
@@ -358,8 +358,8 @@
 
   function triggerSync(entity) {
     var t0       = Date.now();
-    var progress = document.getElementById('bsalesync-progress');
-    var result   = document.getElementById('bsalesync-result');
+    var progress = document.getElementById('synkrop-progress');
+    var result   = document.getElementById('synkrop-result');
     var label    = document.getElementById('bs-progress-label');
     var elapsed  = document.getElementById('bs-elapsed');
     var btns     = document.querySelectorAll('.btn-sync');

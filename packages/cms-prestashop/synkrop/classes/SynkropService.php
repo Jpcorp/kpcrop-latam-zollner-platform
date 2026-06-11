@@ -8,7 +8,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-class BsaleSyncService
+class SynkropService
 {
     private BsaleApiClient $bsale;
     private LicenseClient $license;
@@ -118,7 +118,7 @@ class BsaleSyncService
     private function saveProductMap(int $idProduct, array $variant): void
     {
         $exists = Db::getInstance()->getValue(
-            'SELECT id FROM `' . _DB_PREFIX_ . 'bsalesync_product_map`
+            'SELECT id FROM `' . _DB_PREFIX_ . 'synkrop_product_map`
              WHERE bsale_code = "' . pSQL($variant['code']) . '"
              AND id_shop = ' . $this->idShop
         );
@@ -132,11 +132,11 @@ class BsaleSyncService
         ];
 
         if ($exists) {
-            Db::getInstance()->update('bsalesync_product_map', $data,
+            Db::getInstance()->update('synkrop_product_map', $data,
                 'bsale_code = "' . pSQL($variant['code']) . '" AND id_shop = ' . $this->idShop);
         } else {
             $data['id_shop'] = $this->idShop;
-            Db::getInstance()->insert('bsalesync_product_map', $data);
+            Db::getInstance()->insert('synkrop_product_map', $data);
         }
     }
 
@@ -170,7 +170,7 @@ class BsaleSyncService
     private function findProductByBsaleVariantId(int $variantId): ?int
     {
         $id = (int)Db::getInstance()->getValue(
-            'SELECT id_product FROM `' . _DB_PREFIX_ . 'bsalesync_product_map`
+            'SELECT id_product FROM `' . _DB_PREFIX_ . 'synkrop_product_map`
              WHERE bsale_variant_id = ' . $variantId . ' AND id_shop = ' . $this->idShop
         );
         return $id ?: null;
@@ -182,13 +182,13 @@ class BsaleSyncService
         $result = new SyncResult();
 
         $config = Db::getInstance()->getRow(
-            'SELECT bsale_price_list_id FROM `' . _DB_PREFIX_ . 'bsalesync_config`
+            'SELECT bsale_price_list_id FROM `' . _DB_PREFIX_ . 'synkrop_config`
              WHERE id_shop = ' . $this->idShop
         );
 
         $priceListId = (int)($config['bsale_price_list_id'] ?? 0);
         if (!$priceListId) {
-            throw new RuntimeException('No hay lista de precios configurada. Ve a Configuración > Bsale Sync.');
+            throw new RuntimeException('No hay lista de precios configurada. Ve a Configuración > Synkrop.');
         }
 
         // Precio base: aplica a todos los clientes
@@ -197,7 +197,7 @@ class BsaleSyncService
         // Precio por grupo de clientes (mayorista, minorista, etc.)
         $groupMaps = Db::getInstance()->executeS(
             'SELECT id_group, bsale_price_list_id
-             FROM `' . _DB_PREFIX_ . 'bsalesync_price_group_map`
+             FROM `' . _DB_PREFIX_ . 'synkrop_price_group_map`
              WHERE id_shop = ' . $this->idShop . ' AND active = 1'
         );
 

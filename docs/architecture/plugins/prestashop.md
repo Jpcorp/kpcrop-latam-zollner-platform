@@ -8,14 +8,14 @@ PrestaShop es el primer CMS a implementar. Es un modulo PHP que se instala desde
 
 ```
 packages/cms-prestashop/
-├── bsalesync/                          ← nombre del modulo (carpeta = nombre en PS)
-│   ├── bsalesync.php                   ← clase principal del modulo (obligatoria)
+├── synkrop/                          ← nombre del modulo (carpeta = nombre en PS)
+│   ├── synkrop.php                   ← clase principal del modulo (obligatoria)
 │   ├── config.xml                      ← metadata del modulo (generado)
 │   ├── logo.png                        ← icono 32×32 que aparece en el backoffice
 │   │
 │   ├── controllers/
 │   │   └── admin/
-│   │       └── AdminBsaleSyncController.php   ← pantalla de configuracion en backoffice
+│   │       └── AdminSynkropController.php   ← pantalla de configuracion en backoffice
 │   │
 │   ├── views/
 │   │   └── templates/
@@ -25,7 +25,7 @@ packages/cms-prestashop/
 │   │
 │   ├── classes/
 │   │   ├── BsaleApiClient.php          ← HTTP client para Bsale API
-│   │   ├── BsaleSyncService.php        ← orquesta el flujo de sync
+│   │   ├── SynkropService.php        ← orquesta el flujo de sync
 │   │   ├── CanonicalProduct.php        ← modelo canonico (PHP)
 │   │   ├── BsaleProductAdapter.php     ← Bsale response → CanonicalProduct
 │   │   ├── PrestashopProductAdapter.php← CanonicalProduct → PrestaShop Product
@@ -56,17 +56,17 @@ packages/cms-prestashop/
 
 ```php
 <?php
-// packages/cms-prestashop/bsalesync/bsalesync.php
+// packages/cms-prestashop/synkrop/synkrop.php
 
 if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-class BsaleSync extends Module
+class Synkrop extends Module
 {
     public function __construct()
     {
-        $this->name          = 'bsalesync';
+        $this->name          = 'synkrop';
         $this->tab           = 'administration';
         $this->version       = '1.0.0';
         $this->author        = 'kpcrop-latam';
@@ -76,7 +76,7 @@ class BsaleSync extends Module
 
         parent::__construct();
 
-        $this->displayName = $this->l('Bsale Sync');
+        $this->displayName = $this->l('Synkrop');
         $this->description = $this->l('Sincroniza productos, precios y stock desde Bsale a tu tienda PrestaShop.');
     }
 
@@ -100,10 +100,10 @@ class BsaleSync extends Module
     {
         $tab = new Tab();
         $tab->active = 1;
-        $tab->class_name = 'AdminBsaleSync';
+        $tab->class_name = 'AdminSynkrop';
         $tab->name = [];
         foreach (Language::getLanguages(true) as $lang) {
-            $tab->name[$lang['id_lang']] = 'Bsale Sync';
+            $tab->name[$lang['id_lang']] = 'Synkrop';
         }
         $tab->id_parent = (int) Tab::getIdFromClassName('AdminCatalog');
         $tab->module = $this->name;
@@ -130,7 +130,7 @@ class BsaleSync extends Module
 
 ```php
 <?php
-// packages/cms-prestashop/bsalesync/classes/CanonicalProduct.php
+// packages/cms-prestashop/synkrop/classes/CanonicalProduct.php
 
 class CanonicalProduct
 {
@@ -176,7 +176,7 @@ class CanonicalVariant
 
 ```php
 <?php
-// packages/cms-prestashop/bsalesync/classes/BsaleProductAdapter.php
+// packages/cms-prestashop/synkrop/classes/BsaleProductAdapter.php
 
 class BsaleProductAdapter
 {
@@ -220,7 +220,7 @@ class BsaleProductAdapter
 
 ```php
 <?php
-// packages/cms-prestashop/bsalesync/classes/PrestashopProductAdapter.php
+// packages/cms-prestashop/synkrop/classes/PrestashopProductAdapter.php
 
 class PrestashopProductAdapter
 {
@@ -276,7 +276,7 @@ class PrestashopProductAdapter
     {
         // IVA 19% Chile → buscar el grupo de impuesto configurado
         // Si no existe, usar el default de la tienda
-        return (int) Configuration::get('BSALESYNC_TAX_RULE_GROUP_ID') ?: 1;
+        return (int) Configuration::get('SYNKROP_TAX_RULE_GROUP_ID') ?: 1;
     }
 
     private function syncImages(Product $product, array $images): void
@@ -297,9 +297,9 @@ class PrestashopProductAdapter
 
     private function imageExists(int $productId, string $url): bool
     {
-        // Buscar en tabla auxiliar bsalesync_images si la URL ya fue importada
+        // Buscar en tabla auxiliar synkrop_images si la URL ya fue importada
         return (bool) Db::getInstance()->getValue(
-            'SELECT id FROM `' . _DB_PREFIX_ . 'bsalesync_images`
+            'SELECT id FROM `' . _DB_PREFIX_ . 'synkrop_images`
              WHERE id_product = ' . (int) $productId . '
              AND source_url = "' . pSQL($url) . '"'
         );
@@ -318,10 +318,10 @@ class PrestashopProductAdapter
 ## Esquema de Base de Datos del Modulo
 
 ```sql
--- packages/cms-prestashop/bsalesync/sql/install.sql
+-- packages/cms-prestashop/synkrop/sql/install.sql
 
 -- Configuracion del modulo por tienda
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_config` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     `id`                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_shop`               INT UNSIGNED NOT NULL DEFAULT 1,
     `bsale_api_token`       VARCHAR(255) NOT NULL DEFAULT '',
@@ -339,7 +339,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Registro de imagenes importadas para evitar duplicados
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_images` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_images` (
     `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_product`    INT UNSIGNED NOT NULL,
     `id_image`      INT UNSIGNED NOT NULL,
@@ -350,7 +350,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_images` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Log de syncs para mostrar historial en backoffice
-CREATE TABLE IF NOT EXISTS `PREFIX_bsalesync_log` (
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_log` (
     `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_shop`       INT UNSIGNED NOT NULL DEFAULT 1,
     `sync_type`     VARCHAR(20) NOT NULL DEFAULT 'manual',
@@ -374,13 +374,13 @@ sequenceDiagram
     autonumber
     actor A as Admin PrestaShop
     participant PS as BackOffice PS
-    participant M as Modulo BsaleSync
+    participant M as Modulo Synkrop
     participant BM as bot-miki API
     participant BS as Bsale API
 
-    A->>PS: Modulos → Instalar BsaleSync
+    A->>PS: Modulos → Instalar Synkrop
     PS->>M: install() → crea tablas SQL + registra tab
-    A->>PS: Modulos → Configurar BsaleSync
+    A->>PS: Modulos → Configurar Synkrop
     PS->>M: getContent() → mostrar formulario
     A->>M: Ingresar: Bsale API Token + API Key de licencia + Lista de Precios
     M->>BM: GET /v1/license/token {apiKey}
@@ -389,7 +389,7 @@ sequenceDiagram
     BS-->>M: 200 OK {integrationId, businessName}
     M->>PS: Guardar config + mostrar: "Conectado a Bsale — [BusinessName]"
     A->>PS: Clic "Sincronizar ahora"
-    M->>M: Iniciar BsaleSyncService::syncProducts()
+    M->>M: Iniciar SynkropService::syncProducts()
 ```
 
 ---
@@ -412,22 +412,22 @@ Para el MVP, antes de que bot-miki este operativo, el sync automatico se puede i
 ```bash
 # En el servidor del cliente (crontab)
 # Sync de productos cada hora
-0 * * * * php /var/www/prestashop/modules/bsalesync/cli/sync.php products
+0 * * * * php /var/www/prestashop/modules/synkrop/cli/sync.php products
 
 # Sync de stock cada 15 minutos
-*/15 * * * * php /var/www/prestashop/modules/bsalesync/cli/sync.php stock
+*/15 * * * * php /var/www/prestashop/modules/synkrop/cli/sync.php stock
 ```
 
 ```php
 <?php
-// packages/cms-prestashop/bsalesync/cli/sync.php
+// packages/cms-prestashop/synkrop/cli/sync.php
 // Permite ejecutar sync desde cron sin pasar por HTTP (sin limite de tiempo PHP)
 
 define('_PS_ADMIN_DIR_', __DIR__ . '/../../../admin');
 require_once __DIR__ . '/../../../config/config.inc.php';
 
 $entityType = $argv[1] ?? 'products';
-$service = new BsaleSyncService();
+$service = new SynkropService();
 $service->sync($entityType);
 ```
 

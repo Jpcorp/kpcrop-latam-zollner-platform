@@ -27,8 +27,8 @@
 
 ## Plugin PrestaShop — Configuracion en cliente
 
-Al instalar el modulo `bsalesync` en el PrestaShop del cliente, configurar en
-**Admin → Catalogo → Bsale Sync**:
+Al instalar el modulo `synkrop` en el PrestaShop del cliente, configurar en
+**Admin → Catalogo → Synkrop**:
 
 | Campo | Valor para primer cliente |
 |---|---|
@@ -40,7 +40,7 @@ Al instalar el modulo `bsalesync` en el PrestaShop del cliente, configurar en
 > **Nota dominio:** `api.espaciobits.com` esta registrado con CNAME correcto pero Railway
 > no puede emitir el cert SSL porque `espaciobits.com` raiz apunta a otro hosting.
 > Mientras se resuelve, usar la URL de Railway directamente. El cambio futuro es
-> solo actualizar `daemon_api_url` en la tabla `bsalesync_config` del cliente.
+> solo actualizar `daemon_api_url` en la tabla `synkrop_config` del cliente.
 
 ---
 
@@ -95,7 +95,7 @@ y aplica `docker/seed-dev.sql`. El seed configura:
 
 - `daemon_api_url` → `http://host.docker.internal:3000` (bot-miki local)
 - `daemon_api_key` → `kp_dev_api_key_para_desarrollo_local_no_usar_en_prod`
-- 4 registros de log de ejemplo en `bsalesync_log`
+- 4 registros de log de ejemplo en `synkrop_log`
 
 Para probar contra Railway en lugar de bot-miki local, editar `seed-dev.sql`
 y cambiar `daemon_api_url` y `daemon_api_key` a los valores de produccion.

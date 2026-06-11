@@ -16,6 +16,50 @@ export async function adminRoute(app: FastifyInstance) {
     }
   });
 
+  // ─── GET /v1/admin/tenants/:tenantId ───────────────────────────────────────
+
+  app.get<{ Params: { tenantId: string } }>(
+    '/admin/tenants/:tenantId',
+    {
+      schema: {
+        tags: ['admin'],
+        summary: 'Obtener tenant y su API Key',
+        security: [{ adminKey: [] }],
+        params: { type: 'object', required: ['tenantId'], properties: { tenantId: { type: 'string' } } },
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' }, tenantId: { type: 'string' }, plan: { type: 'string' },
+              apiKey: { type: 'string' }, status: { type: 'string' }, createdAt: { type: 'string' },
+            },
+          },
+          404: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } },
+        },
+      },
+    },
+    async (request, reply) => {
+      const license = await db
+        .selectFrom('licenses')
+        .selectAll()
+        .where('tenant_id', '=', request.params.tenantId)
+        .executeTakeFirst();
+
+      if (!license) {
+        return reply.code(404).send({ code: 'TENANT_NOT_FOUND', message: `Tenant '${request.params.tenantId}' no encontrado` });
+      }
+
+      return reply.send({
+        id:        license.id,
+        tenantId:  license.tenant_id,
+        plan:      license.plan,
+        apiKey:    license.api_key,
+        status:    license.status,
+        createdAt: (license.created_at as Date).toISOString(),
+      });
+    },
+  );
+
   // ─── POST /v1/admin/tenants ─────────────────────────────────────────────────
   // Creates a new license + tenant. Returns the generated api_key (only time it's shown).
 

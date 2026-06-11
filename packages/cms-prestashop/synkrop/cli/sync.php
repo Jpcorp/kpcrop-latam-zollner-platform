@@ -4,10 +4,10 @@
  * Sin límite de tiempo PHP — apto para +1000 productos.
  *
  * Uso (dentro del contenedor Docker de PrestaShop):
- *   php modules/bsalesync/cli/sync.php products
- *   php modules/bsalesync/cli/sync.php stock
- *   php modules/bsalesync/cli/sync.php prices
- *   php modules/bsalesync/cli/sync.php all
+ *   php modules/synkrop/cli/sync.php products
+ *   php modules/synkrop/cli/sync.php stock
+ *   php modules/synkrop/cli/sync.php prices
+ *   php modules/synkrop/cli/sync.php all
  *
  * Opciones:
  *   --shop=1           ID de tienda (default: 1)
@@ -34,10 +34,10 @@ if (!file_exists(_PS_ROOT_DIR_ . '/config/config.inc.php')) {
 
 require_once _PS_ROOT_DIR_ . '/config/config.inc.php';
 require_once _PS_ROOT_DIR_ . '/init.php';
-require_once _PS_MODULE_DIR_ . 'bsalesync/bsalesync.php';
-require_once _PS_MODULE_DIR_ . 'bsalesync/classes/BsaleApiClient.php';
-require_once _PS_MODULE_DIR_ . 'bsalesync/classes/LicenseClient.php';
-require_once _PS_MODULE_DIR_ . 'bsalesync/classes/BsaleSyncService.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/synkrop.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/classes/BsaleApiClient.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/classes/LicenseClient.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/classes/SynkropService.php';
 
 // ── Parseo de argumentos ──────────────────────────────────────────────────────
 
@@ -87,11 +87,11 @@ function logResult(string $entity, SyncResult $result): void
 // ── Cargar config de la tienda ────────────────────────────────────────────────
 
 $config = Db::getInstance()->getRow(
-    'SELECT * FROM `' . _DB_PREFIX_ . 'bsalesync_config` WHERE id_shop = ' . $idShop
+    'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_config` WHERE id_shop = ' . $idShop
 );
 
 if (empty($config)) {
-    logError("No hay configuración de bsalesync para id_shop=$idShop. Ejecuta la instalación del módulo.");
+    logError("No hay configuración de synkrop para id_shop=$idShop. Ejecuta la instalación del módulo.");
     exit(1);
 }
 
@@ -104,11 +104,11 @@ if ($dryRun) {
     echo "[DRY-RUN] No se modificarán datos.\n";
 }
 
-echo "=== bsalesync CLI | tienda #$idShop | " . date('Y-m-d H:i:s') . " ===\n\n";
+echo "=== synkrop CLI | tienda #$idShop | " . date('Y-m-d H:i:s') . " ===\n\n";
 
 // ── Construir servicio ────────────────────────────────────────────────────────
 
-$decryptedToken = BsaleSync::decryptToken($config['bsale_api_token']);
+$decryptedToken = Synkrop::decryptToken($config['bsale_api_token']);
 $bsale   = new BsaleApiClient($decryptedToken);
 $license = new LicenseClient(
     $config['daemon_api_url'],
@@ -126,7 +126,7 @@ if (!$dryRun) {
     }
 }
 
-$service = new BsaleSyncService($bsale, $license, $idShop);
+$service = new SynkropService($bsale, $license, $idShop);
 
 // ── Ejecutar sync ─────────────────────────────────────────────────────────────
 
@@ -146,7 +146,7 @@ foreach ($entities as $ent) {
         logResult($ent, $result);
 
         // Registrar en log
-        Db::getInstance()->insert('bsalesync_log', [
+        Db::getInstance()->insert('synkrop_log', [
             'id_shop'       => $idShop,
             'sync_type'     => pSQL('cli'),
             'entity_type'   => pSQL($ent),

@@ -193,7 +193,7 @@ curl -H "access_token: $BSALE_SANDBOX_TOKEN" \
 | `packages/shared` — modelos y adapters | 80% |
 | `packages/bot-miki` — rutas criticas (licencia, webhook) | 70% |
 | `packages/cms-prestashop` — adapters Bsale y PrestaShop | 70% |
-| `packages/cms-prestashop` — BsaleSyncService | 60% |
+| `packages/cms-prestashop` — SynkropService | 60% |
 
 ---
 

@@ -67,7 +67,7 @@ flowchart TD
 Plugin PrestaShop:
   → Catch BsaleApiException (5xx/timeout)
   → Mostrar en UI: "Error de conexion con Bsale. Intentalo de nuevo en unos minutos."
-  → Registrar en bsalesync_log: status='failed', error_message='HTTP 503'
+  → Registrar en synkrop_log: status='failed', error_message='HTTP 503'
   → NO reintentar automaticamente (es sync manual — el admin decide)
 ```
 
@@ -86,7 +86,7 @@ Worker BullMQ:
 ### Escenario 3: 50 de 1000 productos tienen SKU duplicado en PrestaShop
 
 ```
-BsaleSyncService:
+SynkropService:
   → Intentar UPSERT del producto (por reference = SKU)
   → Si la DB de PrestaShop tiene dos products con el mismo reference (data sucia):
     → Usar el ID del primero encontrado
@@ -103,10 +103,10 @@ LicenseClient:
   → GET /v1/license/token → HTTP 402
   → Lanzar LicenseException(402)
 
-BsaleSyncService:
+SynkropService:
   → Catch LicenseException → NO continuar el sync
 
-AdminBsaleSyncController:
+AdminSynkropController:
   → Catch LicenseException
   → Mostrar en UI: "Tu licencia ha expirado. [Renovar en kpcrop.com/billing]"
   → Deshabilitar botones de sync
@@ -125,9 +125,9 @@ Catalogo grande (>3000 productos) + Apache con max_execution_time=60s:
   → El sync queda incompleto sin registro
 
 Mitigacion:
-  1. BsaleSyncService procesa en lotes y hace flush() del output buffer cada 100 productos
+  1. SynkropService procesa en lotes y hace flush() del output buffer cada 100 productos
   2. Para catalogos grandes (>1000 productos): usar CLI en lugar del backoffice
-     php /ruta/prestashop/modules/bsalesync/cli/sync.php products
+     php /ruta/prestashop/modules/synkrop/cli/sync.php products
   3. El CLI no tiene limite de tiempo de ejecucion PHP
 ```
 

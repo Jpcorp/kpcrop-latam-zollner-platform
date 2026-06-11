@@ -1,4 +1,4 @@
-# Wireframes — Plugin PrestaShop (BsaleSync)
+# Wireframes — Plugin PrestaShop (Synkrop)
 
 Especificacion de UI para el backoffice de PrestaShop. El diseñador usa esto como base para los mockups finales.
 
@@ -6,11 +6,11 @@ Especificacion de UI para el backoffice de PrestaShop. El diseñador usa esto co
 
 ## Pantalla 1: Configuracion del Modulo
 
-Ruta: `Admin > Modulos > BsaleSync > Configurar`
+Ruta: `Admin > Modulos > Synkrop > Configurar`
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  🔵 BsaleSync                               Modulos > BsaleSync  │
+│  🔵 Synkrop                               Modulos > Synkrop  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  ┌─── Conexion Bsale ────────────────────────────────────────┐  │
@@ -85,11 +85,11 @@ Error:
 
 ## Pantalla 2: Panel de Sincronizacion
 
-Ruta: `Admin > Catálogo > Bsale Sync` (tab en el menu lateral)
+Ruta: `Admin > Catálogo > Synkrop` (tab en el menu lateral)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  🔵 Bsale Sync                       Admin > Catálogo > Bsale   │
+│  🔵 Synkrop                       Admin > Catálogo > Bsale   │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                   │
 │  ┌─── Estado de la conexion ─────────────────────────────────┐  │

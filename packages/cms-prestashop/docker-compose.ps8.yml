@@ -52,7 +52,7 @@ services:
       - "8082:80"           # puerto distinto al de PS 1.7.8
     volumes:
       - prestashop_ps8_data:/var/www/html
-      - ./bsalesync:/var/www/html/modules/bsalesync
+      - ./synkrop:/var/www/html/modules/synkrop
     healthcheck:
       test: ["CMD-SHELL", "[ -f /var/www/html/config/settings.inc.php ]"]
       interval: 15s
@@ -60,7 +60,7 @@ services:
       retries: 30
       start_period: 60s
 
-  # ── Init: instala tablas bsalesync + seed ─────────────────────────────────
+  # ── Init: instala tablas synkrop + seed ─────────────────────────────────
   ps8-init:
     image: mariadb:10.6
     container_name: kpcrop-ps8-init
@@ -76,7 +76,7 @@ services:
     volumes:
       - ./docker/post-install.sh:/post-install.sh:ro
       - ./docker/seed-dev.sql:/seed-dev.sql:ro
-      - ./bsalesync/sql/install.sql:/install.sql:ro
+      - ./synkrop/sql/install.sql:/install.sql:ro
     command: bash /post-install.sh
     restart: "no"
 

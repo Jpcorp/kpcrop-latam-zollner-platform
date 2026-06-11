@@ -3,11 +3,11 @@
 use PHPUnit\Framework\TestCase;
 
 /**
- * Tests unitarios para BsaleSyncService.
+ * Tests unitarios para SynkropService.
  * Verifica: syncPrices (precio base + por grupo), idempotencia del upsert,
  * y manejo de fallos parciales.
  */
-class BsaleSyncServiceTest extends TestCase
+class SynkropServiceTest extends TestCase
 {
     private BsaleApiClient $bsaleMock;
     private LicenseClient $licenseMock;
@@ -28,11 +28,11 @@ class BsaleSyncServiceTest extends TestCase
     public function test_syncPrices_updates_base_price_in_ps_product(): void
     {
         $db = Db::getInstance();
-        $db->queryResults['bsalesync_config'] = ['bsale_price_list_id' => 1];
+        $db->queryResults['synkrop_config'] = ['bsale_price_list_id' => 1];
         // No group maps
-        $db->queryResults['bsalesync_price_group_map'] = [];
+        $db->queryResults['synkrop_price_group_map'] = [];
         // Variant 1001 maps to product 5
-        $db->queryResults['bsalesync_product_map'] = 5;
+        $db->queryResults['synkrop_product_map'] = 5;
 
         $this->bsaleMock = $this->createMock(BsaleApiClient::class);
         $this->bsaleMock->method('getAll')
@@ -40,7 +40,7 @@ class BsaleSyncServiceTest extends TestCase
                 ['variantValue' => 19990.0, 'variant' => ['id' => 1001]],
             ]);
 
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
         $result  = $service->sync('prices');
 
         $this->assertEquals('success', $result->status());
@@ -57,9 +57,9 @@ class BsaleSyncServiceTest extends TestCase
     public function test_syncPrices_price_value_is_correct(): void
     {
         $db = Db::getInstance();
-        $db->queryResults['bsalesync_config']          = ['bsale_price_list_id' => 1];
-        $db->queryResults['bsalesync_price_group_map'] = [];
-        $db->queryResults['bsalesync_product_map']     = 10;
+        $db->queryResults['synkrop_config']          = ['bsale_price_list_id' => 1];
+        $db->queryResults['synkrop_price_group_map'] = [];
+        $db->queryResults['synkrop_product_map']     = 10;
 
         $this->bsaleMock = $this->createMock(BsaleApiClient::class);
         $this->bsaleMock->method('getAll')
@@ -67,7 +67,7 @@ class BsaleSyncServiceTest extends TestCase
                 ['variantValue' => 35500.0, 'variant' => ['id' => 9999]],
             ]);
 
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
         $service->sync('prices');
 
         $productUpdate = array_values(array_filter(
@@ -84,11 +84,11 @@ class BsaleSyncServiceTest extends TestCase
     public function test_syncPrices_creates_specific_price_for_group(): void
     {
         $db = Db::getInstance();
-        $db->queryResults['bsalesync_config']          = ['bsale_price_list_id' => 1];
-        $db->queryResults['bsalesync_price_group_map'] = [
+        $db->queryResults['synkrop_config']          = ['bsale_price_list_id' => 1];
+        $db->queryResults['synkrop_price_group_map'] = [
             ['id_group' => 2, 'bsale_price_list_id' => 2],
         ];
-        $db->queryResults['bsalesync_product_map'] = 7;
+        $db->queryResults['synkrop_product_map'] = 7;
         // Simula que no existe specific_price previo → insert
         $db->queryResults['specific_price'] = null;
 
@@ -98,7 +98,7 @@ class BsaleSyncServiceTest extends TestCase
                 ['variantValue' => 15000.0, 'variant' => ['id' => 1001]],
             ]);
 
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
         $service->sync('prices');
 
         $insertCalls = array_values(array_filter(
@@ -114,11 +114,11 @@ class BsaleSyncServiceTest extends TestCase
     public function test_syncPrices_updates_existing_specific_price_idempotent(): void
     {
         $db = Db::getInstance();
-        $db->queryResults['bsalesync_config']          = ['bsale_price_list_id' => 1];
-        $db->queryResults['bsalesync_price_group_map'] = [
+        $db->queryResults['synkrop_config']          = ['bsale_price_list_id' => 1];
+        $db->queryResults['synkrop_price_group_map'] = [
             ['id_group' => 2, 'bsale_price_list_id' => 2],
         ];
-        $db->queryResults['bsalesync_product_map'] = 7;
+        $db->queryResults['synkrop_product_map'] = 7;
         // Simula que YA existe specific_price con id 99
         $db->queryResults['specific_price'] = 99;
 
@@ -128,7 +128,7 @@ class BsaleSyncServiceTest extends TestCase
                 ['variantValue' => 12000.0, 'variant' => ['id' => 1001]],
             ]);
 
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
         $service->sync('prices');
 
         // Idempotencia: update, NO insert
@@ -145,11 +145,11 @@ class BsaleSyncServiceTest extends TestCase
     public function test_syncPrices_throws_when_price_list_not_configured(): void
     {
         $db = Db::getInstance();
-        $db->queryResults['bsalesync_config'] = ['bsale_price_list_id' => null];
+        $db->queryResults['synkrop_config'] = ['bsale_price_list_id' => null];
 
         $this->bsaleMock = $this->createMock(BsaleApiClient::class);
 
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
 
         $this->expectException(RuntimeException::class);
         $this->expectExceptionMessageMatches('/lista de precios/i');
@@ -162,10 +162,10 @@ class BsaleSyncServiceTest extends TestCase
     public function test_syncPrices_counts_skipped_variants_without_product_map(): void
     {
         $db = Db::getInstance();
-        $db->queryResults['bsalesync_config']          = ['bsale_price_list_id' => 1];
-        $db->queryResults['bsalesync_price_group_map'] = [];
+        $db->queryResults['synkrop_config']          = ['bsale_price_list_id' => 1];
+        $db->queryResults['synkrop_price_group_map'] = [];
         // Variant no mapeada → findProductByBsaleVariantId devuelve null
-        $db->queryResults['bsalesync_product_map']     = null;
+        $db->queryResults['synkrop_product_map']     = null;
 
         $this->bsaleMock = $this->createMock(BsaleApiClient::class);
         $this->bsaleMock->method('getAll')
@@ -174,7 +174,7 @@ class BsaleSyncServiceTest extends TestCase
                 ['variantValue' => 8888.0, 'variant' => ['id' => 6666]],
             ]);
 
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
         $result  = $service->sync('prices');
 
         // updated=0 porque no hay productos mapeados, pero tampoco falla
@@ -187,7 +187,7 @@ class BsaleSyncServiceTest extends TestCase
     public function test_sync_throws_on_unknown_entity(): void
     {
         $this->bsaleMock = $this->createMock(BsaleApiClient::class);
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
 
         $this->expectException(InvalidArgumentException::class);
         $service->sync('orders'); // no soportado
@@ -202,7 +202,7 @@ class BsaleSyncServiceTest extends TestCase
             ->willThrowException(new LicenseException('Licencia suspendida', 402));
 
         $this->bsaleMock = $this->createMock(BsaleApiClient::class);
-        $service = new BsaleSyncService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
 
         $this->expectException(LicenseException::class);
         $service->sync('prices');

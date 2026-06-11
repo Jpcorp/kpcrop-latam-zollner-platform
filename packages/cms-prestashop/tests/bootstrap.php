@@ -170,6 +170,6 @@ class Configuration
 
 // ── Autoload de clases del módulo ─────────────────────────────────────────────
 
-require_once __DIR__ . '/../bsalesync/classes/BsaleApiClient.php';
-require_once __DIR__ . '/../bsalesync/classes/LicenseClient.php';
-require_once __DIR__ . '/../bsalesync/classes/BsaleSyncService.php';
+require_once __DIR__ . '/../synkrop/classes/BsaleApiClient.php';
+require_once __DIR__ . '/../synkrop/classes/LicenseClient.php';
+require_once __DIR__ . '/../synkrop/classes/SynkropService.php';

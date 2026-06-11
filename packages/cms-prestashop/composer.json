@@ -1,5 +1,5 @@
 {
-  "name": "kpcrop/bsalesync-prestashop",
+  "name": "kpcrop/synkrop-prestashop",
   "description": "Plugin PrestaShop para sincronizar productos, precios y stock desde Bsale",
   "version": "1.0.0",
   "type": "prestashop-module",
@@ -16,17 +16,17 @@
   },
   "autoload": {
     "psr-4": {
-      "Kpcrop\\BsaleSync\\": "bsalesync/classes/"
+      "Kpcrop\\Synkrop\\": "synkrop/classes/"
     }
   },
   "autoload-dev": {
     "psr-4": {
-      "Kpcrop\\BsaleSync\\Tests\\": "tests/"
+      "Kpcrop\\Synkrop\\Tests\\": "tests/"
     }
   },
   "scripts": {
     "test": "phpunit --testdox",
-    "lint": "phpcs --standard=PSR12 bsalesync/classes/"
+    "lint": "phpcs --standard=PSR12 synkrop/classes/"
   },
   "config": {
     "optimize-autoloader": true

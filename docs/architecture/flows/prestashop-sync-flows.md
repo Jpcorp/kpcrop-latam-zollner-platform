@@ -10,11 +10,11 @@ Diagrama end-to-end de los tres modos de sincronización entre Bsale ERP y Prest
 graph LR
     subgraph PS["PrestaShop (PHP)"]
         UI["sync-panel.tpl\nBackoffice UI"]
-        CTRL["AdminBsaleSyncController\najaxProcessSyncNow()"]
-        SVC["BsaleSyncService\nsync(entityType)"]
+        CTRL["AdminSynkropController\najaxProcessSyncNow()"]
+        SVC["SynkropService\nsync(entityType)"]
         LC["LicenseClient\ngetToken()"]
         BC["BsaleApiClient\ngetAll()"]
-        DB_PS[("MySQL\nbsalesync_config\nbsalesync_log\nbsalesync_product_map")]
+        DB_PS[("MySQL\nsynkrop_config\nsynkrop_log\nsynkrop_product_map")]
     end
 
     subgraph BM["bot-miki (Node.js + Fastify)"]
@@ -59,13 +59,13 @@ El dueño de tienda inicia el proceso desde el backoffice de PrestaShop.
 sequenceDiagram
     actor Admin as Dueño de tienda
     participant UI as sync-panel.tpl
-    participant CTRL as AdminBsaleSyncController
+    participant CTRL as AdminSynkropController
     participant LC as LicenseClient
     participant BM as bot-miki<br/>/v1/license/token
     participant CF as Cloudflare Edge
     participant BC as BsaleApiClient
     participant BSALE as Bsale API
-    participant SVC as BsaleSyncService
+    participant SVC as SynkropService
     participant PS as PrestaShop DB<br/>(MySQL)
     participant RPT as bot-miki<br/>/v1/sync/report
 
@@ -75,7 +75,7 @@ sequenceDiagram
     Note over CTRL: buildSyncService()<br/>Descifra token Bsale (AES-256-CBC)
 
     CTRL->>LC: getToken()
-    LC->>PS: SELECT license_jwt FROM bsalesync_config<br/>(¿hay JWT en caché no expirado?)
+    LC->>PS: SELECT license_jwt FROM synkrop_config<br/>(¿hay JWT en caché no expirado?)
 
     alt JWT válido en caché
         PS-->>LC: JWT (expira en >60s)
@@ -87,7 +87,7 @@ sequenceDiagram
         alt Licencia activa
             BM-->>CF: 200 + JWT (TTL 5min)<br/>Cache-Control: max-age=240
             CF-->>LC: JWT fresco
-            LC->>PS: UPDATE bsalesync_config SET license_jwt, expires
+            LC->>PS: UPDATE synkrop_config SET license_jwt, expires
         else Licencia suspendida/expirada
             BM-->>CF: 402 Payment Required
             CF-->>LC: 402
@@ -119,12 +119,12 @@ sequenceDiagram
             SVC->>PS: INSERT INTO product
         end
         SVC->>PS: StockAvailable::setQuantity(id, 0, cantidad)
-        SVC->>PS: UPSERT bsalesync_product_map<br/>(bsale_variant_id ↔ id_product)
+        SVC->>PS: UPSERT synkrop_product_map<br/>(bsale_variant_id ↔ id_product)
     end
 
     SVC-->>CTRL: SyncResult { updated: N, failed: M, durationMs: X }
 
-    CTRL->>PS: INSERT bsalesync_log (tipo=manual, resultado, duración)
+    CTRL->>PS: INSERT synkrop_log (tipo=manual, resultado, duración)
     CTRL->>RPT: POST /v1/sync/report<br/>{ tenantId, syncType: manual, status, records... }
     RPT->>RPT: INSERT sync_events (historial centralizado)
 
@@ -145,7 +145,7 @@ sequenceDiagram
     participant Q as BullMQ Queue<br/>(Redis)
     participant WRK as sync-worker.ts
     participant BSALE as Bsale API
-    participant PS as PrestaShop<br/>BsaleSyncService
+    participant PS as PrestaShop<br/>SynkropService
     participant RPT as bot-miki<br/>/v1/sync/report
 
     loop Cada 60 segundos
@@ -163,7 +163,7 @@ sequenceDiagram
     BSALE-->>WRK: Datos actualizados
 
     Note over WRK: Aplica cambios en PrestaShop<br/>(mismo flujo que sync manual)
-    WRK->>PS: BsaleSyncService::sync(entityType)
+    WRK->>PS: SynkropService::sync(entityType)
     PS-->>WRK: SyncResult
 
     WRK->>RPT: POST /v1/sync/report<br/>{ syncType: auto, status, records... }
@@ -186,7 +186,7 @@ sequenceDiagram
     participant Q as BullMQ Queue<br/>(Redis)
     participant WRK as sync-worker.ts
     participant BSALE2 as Bsale API<br/>(datos completos)
-    participant PS as PrestaShop<br/>BsaleSyncService
+    participant PS as PrestaShop<br/>SynkropService
     participant RPT as bot-miki<br/>/v1/sync/report
 
     BSALE->>WH: POST { cpnId, topic, resourceId,<br/>action, resource, send }
@@ -213,7 +213,7 @@ sequenceDiagram
     WRK->>BSALE2: GET {resourceUrl} (producto/stock/precio específico)
     BSALE2-->>WRK: Datos del recurso
 
-    WRK->>PS: BsaleSyncService::sync() solo para ese recurso
+    WRK->>PS: SynkropService::sync() solo para ese recurso
     PS-->>WRK: SyncResult
 
     alt Job falla (Bsale caído, PS caído)
@@ -268,7 +268,7 @@ graph TD
 flowchart TD
     A["Plugin necesita operar\n(sync manual, auto o webhook)"] --> B
 
-    B{"¿JWT en caché\nbsalesync_config?\n(expira en >60s)"}
+    B{"¿JWT en caché\nsynkrop_config?\n(expira en >60s)"}
     B -->|Sí| C["Usa JWT cacheado\n✓ Sin red"]
     B -->|No| D["GET /v1/license/token\nX-API-Key: kp_..."]
 
@@ -283,7 +283,7 @@ flowchart TD
     J -->|suspended/cancelled| K["402 → LicenseException\n❌ Renueva en kpcrop.com/billing"]
     J -->|active| L["Genera JWT HS256\nTTL 5 min\nCache-Control: max-age=240"]
 
-    L --> M["Plugin guarda JWT\nen bsalesync_config"]
+    L --> M["Plugin guarda JWT\nen synkrop_config"]
     M --> C
     F --> M
     C --> N["Sync continúa ✓"]

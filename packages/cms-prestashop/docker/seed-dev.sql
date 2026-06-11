@@ -1,4 +1,4 @@
--- Seed de desarrollo para el módulo bsalesync
+-- Seed de desarrollo para el módulo synkrop
 -- Apunta al bot-miki corriendo en el host local (localhost:3000)
 -- host.docker.internal resuelve al host desde dentro de Docker Desktop (Windows/Mac)
 --
@@ -11,8 +11,8 @@
 -- ⚠️  CAMBIO DE URL — cuando el dominio api.kpcrop.com esté activo en Cloudflare:
 --     daemon_api_url = 'https://api.kpcrop.com'
 
--- Configurar bsalesync para tienda por defecto (id_shop = 1)
-UPDATE `PREFIX_bsalesync_config`
+-- Configurar synkrop para tienda por defecto (id_shop = 1)
+UPDATE `PREFIX_synkrop_config`
 SET
     daemon_api_url      = 'http://host.docker.internal:3000',
     daemon_api_key      = 'kp_dev_api_key_para_desarrollo_local_no_usar_en_prod',
@@ -27,7 +27,7 @@ SET
 WHERE id_shop = 1;
 
 -- Insertar si el UPDATE no afectó filas (primer run)
-INSERT IGNORE INTO `PREFIX_bsalesync_config` (
+INSERT IGNORE INTO `PREFIX_synkrop_config` (
     id_shop,
     daemon_api_url,
     daemon_api_key,
@@ -54,7 +54,7 @@ INSERT IGNORE INTO `PREFIX_bsalesync_config` (
 );
 
 -- Insertar registros de log de ejemplo para ver el historial en el backoffice
-INSERT IGNORE INTO `PREFIX_bsalesync_log`
+INSERT IGNORE INTO `PREFIX_synkrop_log`
     (id_shop, sync_type, entity_type, status, records_ok, records_fail, duration_ms, created_at)
 VALUES
     (1, 'manual',  'products', 'success', 142,  0, 3240, DATE_SUB(NOW(), INTERVAL 2 HOUR)),
