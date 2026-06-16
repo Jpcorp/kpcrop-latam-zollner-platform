@@ -10,9 +10,9 @@ if (!defined('_PS_VERSION_')) {
 
 class SynkropService
 {
-    private BsaleApiClient $bsale;
-    private LicenseClient $license;
-    private int $idShop;
+    private $bsale;
+    private $license;
+    private $idShop;
 
     public function __construct(BsaleApiClient $bsale, LicenseClient $license, int $idShop)
     {
@@ -307,10 +307,10 @@ class SynkropService
 
 class SyncResult
 {
-    public int $updated   = 0;
-    public int $failed    = 0;
-    public int $durationMs = 0;
-    public array $errors  = [];
+    public $updated   = 0;
+    public $failed    = 0;
+    public $durationMs = 0;
+    public $errors  = [];
 
     public function status(): string
     {

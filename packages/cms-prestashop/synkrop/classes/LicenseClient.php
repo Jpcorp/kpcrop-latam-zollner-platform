@@ -10,9 +10,9 @@ if (!defined('_PS_VERSION_')) {
 
 class LicenseClient
 {
-    private string $daemonUrl;
-    private string $apiKey;
-    private string $tenantId;
+    private $daemonUrl;
+    private $apiKey;
+    private $tenantId;
 
     public function __construct(string $daemonUrl, string $apiKey, string $tenantId)
     {
@@ -73,14 +73,25 @@ class LicenseClient
 
         $ch = curl_init($url);
         curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_HTTPHEADER     => ['X-API-Key: ' . $this->apiKey],
-            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_RETURNTRANSFER  => true,
+            CURLOPT_HTTPHEADER      => ['X-API-Key: ' . $this->apiKey],
+            CURLOPT_TIMEOUT         => 15,
+            CURLOPT_CONNECTTIMEOUT  => 10,
+            CURLOPT_FOLLOWLOCATION  => true,
+            CURLOPT_SSL_VERIFYPEER  => true,
+            CURLOPT_SSL_VERIFYHOST  => 2,
+            CURLOPT_USERAGENT       => 'Synkrop/1.0 PrestaShop',
         ]);
 
-        $body     = curl_exec($ch);
-        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $body      = curl_exec($ch);
+        $httpCode  = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErrno = curl_errno($ch);
+        $curlError = curl_error($ch);
         curl_close($ch);
+
+        if ($curlErrno !== 0) {
+            throw new LicenseException("No se pudo conectar al servidor de licencias: {$curlError} (errno {$curlErrno})", 0);
+        }
 
         if ($httpCode === 402) {
             throw new LicenseException('Licencia expirada o suspendida. Renueva en kpcrop.com/billing', 402);
