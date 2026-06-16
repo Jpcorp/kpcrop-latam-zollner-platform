@@ -157,6 +157,39 @@ export async function adminRoute(app: FastifyInstance) {
     },
   );
 
+  // ─── GET /v1/admin/tenants/:tenantId/stores ─────────────────────────────────
+
+  app.get<{ Params: { tenantId: string } }>(
+    '/admin/tenants/:tenantId/stores',
+    {
+      schema: {
+        tags: ['admin'],
+        summary: 'Listar tiendas de un tenant',
+        security: [{ adminKey: [] }],
+        params: { type: 'object', required: ['tenantId'], properties: { tenantId: { type: 'string' } } },
+      },
+    },
+    async (request, reply) => {
+      const license = await db
+        .selectFrom('licenses')
+        .select(['id', 'max_stores'])
+        .where('tenant_id', '=', request.params.tenantId)
+        .executeTakeFirst();
+
+      if (!license) {
+        return reply.code(404).send({ code: 'TENANT_NOT_FOUND', message: `Tenant '${request.params.tenantId}' no encontrado` });
+      }
+
+      const stores = await db
+        .selectFrom('tenant_stores')
+        .selectAll()
+        .where('license_id', '=', license.id as string)
+        .execute();
+
+      return reply.send({ maxStores: license.max_stores, stores });
+    },
+  );
+
   // ─── POST /v1/admin/tenants/:tenantId/stores ────────────────────────────────
 
   app.post<{
