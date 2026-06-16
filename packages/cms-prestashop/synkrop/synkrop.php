@@ -324,7 +324,9 @@ class Synkrop extends Module
     {
         $key  = substr(_COOKIE_KEY_, 0, 32);
         $data = base64_decode($encrypted);
-        [$iv, $ciphertext] = explode('::', $data, 2);
+        $parts = explode('::', $data, 2);
+        $iv = $parts[0];
+        $ciphertext = $parts[1];
         return openssl_decrypt($ciphertext, 'AES-256-CBC', $key, 0, $iv) ?: '';
     }
 }

@@ -48,7 +48,7 @@ class LicenseClient
         }
     }
 
-    private function getCachedJwt(): ?string
+    private function getCachedJwt()
     {
         $config = Db::getInstance()->getRow(
             'SELECT license_jwt, license_jwt_expires FROM `' . _DB_PREFIX_ . 'synkrop_config`

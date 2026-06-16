@@ -78,7 +78,7 @@ class BsaleApiClient
         return json_decode($body, true) ?? [];
     }
 
-    private function throttle(): void
+    private function throttle()
     {
         $now = (int)(microtime(true) * 1000);
         $elapsed = $now - $this->lastRequestMs;
