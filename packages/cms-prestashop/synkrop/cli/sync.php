@@ -111,9 +111,9 @@ echo "=== synkrop CLI | tienda #$idShop | " . date('Y-m-d H:i:s') . " ===\n\n";
 $decryptedToken = Synkrop::decryptToken($config['bsale_api_token']);
 $bsale   = new BsaleApiClient($decryptedToken);
 $license = new LicenseClient(
-    $config['daemon_api_url'],
+    SYNKROP_DAEMON_URL,
     $config['daemon_api_key'],
-    md5($config['daemon_api_url'] . $config['daemon_api_key'])
+    md5(SYNKROP_DAEMON_URL . $config['daemon_api_key'])
 );
 
 if (!$dryRun) {

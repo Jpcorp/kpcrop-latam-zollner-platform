@@ -8,6 +8,8 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
+define('SYNKROP_DAEMON_URL', 'https://kpcrop-latam-zollner-platform-production.up.railway.app');
+
 // Autoload de clases del modulo
 require_once __DIR__ . '/classes/BsaleApiClient.php';
 require_once __DIR__ . '/classes/LicenseClient.php';
@@ -61,7 +63,11 @@ class Synkrop extends Module
             $tab->name[$lang['id_lang']] = 'Synkrop';
         }
 
-        return $tab->add();
+        // Tab::add() deprecated in PS 8; Tab::save() is the unified method
+        if (version_compare(_PS_VERSION_, '8.0.0', '>=')) {
+            return (bool)$tab->save();
+        }
+        return (bool)$tab->add();
     }
 
     private function uninstallTab(): bool

@@ -6,10 +6,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     `bsale_integration_id`  INT UNSIGNED DEFAULT NULL,
     `bsale_price_list_id`   INT UNSIGNED DEFAULT NULL,
     `bsale_office_id`       INT UNSIGNED DEFAULT NULL,
-    -- ⚠️  CAMBIO DE URL — mientras api.kpcrop.com no esté activo en Cloudflare, usar:
-    --     DEFAULT 'https://kpcrop-latam-zollner-platform-production.up.railway.app'
-    --     Cuando el dominio esté configurado, volver a 'https://api.kpcrop.com/v1'
-    `daemon_api_url`        VARCHAR(500) NOT NULL DEFAULT 'https://api.kpcrop.com/v1',
+    `daemon_api_url`        VARCHAR(500) NOT NULL DEFAULT 'https://kpcrop-latam-zollner-platform-production.up.railway.app',
     `daemon_api_key`        VARCHAR(64)  NOT NULL DEFAULT '',
     `license_jwt`           TEXT,
     `license_jwt_expires`   DATETIME DEFAULT NULL,
