@@ -13,8 +13,8 @@ class BsaleApiClient
     private const BASE_URL = 'https://api.bsale.io';
     private const RATE_LIMIT_MS = 100; // 10 req/s = 1 req cada 100ms
 
-    private string $accessToken;
-    private int $lastRequestMs = 0;
+    private $accessToken;
+    private $lastRequestMs = 0;
 
     public function __construct(string $accessToken)
     {
