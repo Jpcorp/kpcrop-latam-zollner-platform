@@ -22,8 +22,7 @@ class AdminSynkropController extends ModuleAdminController
         $this->meta_title = $this->l('Synkrop');
     }
 
-    public function initContent(): void
-    {
+    public function initContent()    {
         parent::initContent();
 
         $config = Db::getInstance()->getRow(
@@ -53,8 +52,7 @@ class AdminSynkropController extends ModuleAdminController
 
     // ─── AJAX: Sincronizacion manual ──────────────────────────────────────────
 
-    public function ajaxProcessSyncNow(): void
-    {
+    public function ajaxProcessSyncNow()    {
         set_time_limit(0);
         ini_set('memory_limit', '256M');
 
@@ -96,8 +94,7 @@ class AdminSynkropController extends ModuleAdminController
 
     // ─── AJAX: Verificar token de Bsale ──────────────────────────────────────
 
-    public function ajaxProcessVerifyBsale(): void
-    {
+    public function ajaxProcessVerifyBsale()    {
         if ((bool)Tools::getValue('use_saved')) {
             $config = $this->getConfig();
             $enc    = $config['bsale_api_token'] ?? '';
@@ -129,8 +126,7 @@ class AdminSynkropController extends ModuleAdminController
 
     // ─── AJAX: Verificar licencia ─────────────────────────────────────────────
 
-    public function ajaxProcessVerifyLicense(): void
-    {
+    public function ajaxProcessVerifyLicense()    {
         $config = $this->getConfig();
 
         if ((bool)Tools::getValue('use_saved')) {
@@ -165,8 +161,7 @@ class AdminSynkropController extends ModuleAdminController
 
     // ─── AJAX: Guardar configuracion ──────────────────────────────────────────
 
-    public function ajaxProcessSaveConfig(): void
-    {
+    public function ajaxProcessSaveConfig()    {
         $bsaleToken = Tools::getValue('bsale_token');
         $apiKey     = Tools::getValue('api_key');
 
@@ -224,8 +219,7 @@ class AdminSynkropController extends ModuleAdminController
         ) ?: [];
     }
 
-    private function logSync(string $type, string $entity, SyncResult $result): void
-    {
+    private function logSync(string $type, string $entity, SyncResult $result)    {
         Db::getInstance()->insert('synkrop_log', [
             'id_shop'      => (int)$this->context->shop->id,
             'sync_type'    => pSQL($type),

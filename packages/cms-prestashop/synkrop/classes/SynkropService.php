@@ -67,8 +67,7 @@ class SynkropService
         return $result;
     }
 
-    private function upsertVariant(array $product, array $variant): void
-    {
+    private function upsertVariant(array $product, array $variant)    {
         $code = $variant['code'] ?? '';
         if (empty($code)) {
             throw new RuntimeException('Variante sin codigo SKU — no se puede sincronizar');
@@ -105,7 +104,7 @@ class SynkropService
         $this->saveProductMap($psProduct->id, $variant);
     }
 
-    private function findProductByReference(string $reference): ?int
+    private function findProductByReference(string $reference)
     {
         $id = (int)Db::getInstance()->getValue(
             'SELECT id_product FROM `' . _DB_PREFIX_ . 'product`
@@ -115,8 +114,7 @@ class SynkropService
         return $id ?: null;
     }
 
-    private function saveProductMap(int $idProduct, array $variant): void
-    {
+    private function saveProductMap(int $idProduct, array $variant)    {
         $exists = Db::getInstance()->getValue(
             'SELECT id FROM `' . _DB_PREFIX_ . 'synkrop_product_map`
              WHERE bsale_code = "' . pSQL($variant['code']) . '"
@@ -167,7 +165,7 @@ class SynkropService
         return $result;
     }
 
-    private function findProductByBsaleVariantId(int $variantId): ?int
+    private function findProductByBsaleVariantId(int $variantId)
     {
         $id = (int)Db::getInstance()->getValue(
             'SELECT id_product FROM `' . _DB_PREFIX_ . 'synkrop_product_map`
@@ -218,8 +216,7 @@ class SynkropService
      * Si $idGroup = 0 actualiza el precio base del producto.
      * Si $idGroup > 0 crea un SpecificPrice para ese grupo de clientes.
      */
-    private function applyPriceList(int $priceListId, int $idGroup, SyncResult $result): void
-    {
+    private function applyPriceList(int $priceListId, int $idGroup, SyncResult $result)    {
         $details = $this->bsale->getAll("/v1/price_lists/{$priceListId}/details.json");
 
         foreach ($details as $detail) {
@@ -265,8 +262,7 @@ class SynkropService
      * Crea o actualiza un precio específico en ps_specific_price para un grupo de clientes.
      * Esto permite que mayoristas y minoristas vean precios distintos en la tienda.
      */
-    private function upsertSpecificPrice(int $idProduct, int $idGroup, float $price): void
-    {
+    private function upsertSpecificPrice(int $idProduct, int $idGroup, float $price)    {
         $existing = (int)Db::getInstance()->getValue(
             'SELECT id_specific_price FROM `' . _DB_PREFIX_ . 'specific_price`
              WHERE id_product = ' . $idProduct . '
