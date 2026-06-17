@@ -98,7 +98,8 @@ class SynkropService
 
         // PS valida nombres con Validate::isCatalogName() que rechaza <>{} y caracteres de control.
         $name = strip_tags(html_entity_decode($product['name'] ?? '', ENT_QUOTES, 'UTF-8'));
-        $name = trim(preg_replace('/[<>{}\\x00-\\x1F]/u', '', $name));
+        // PS valida con /^[^<>;=#{}]*$/u — eliminar todos los caracteres que rechaza isCatalogName
+        $name = trim(preg_replace('/[<>{};=#\\x00-\\x1F]/u', '', $name));
         $name = substr($name, 0, 128);
         if (empty($name)) {
             $name = $code; // fallback al SKU si el nombre viene vacio
