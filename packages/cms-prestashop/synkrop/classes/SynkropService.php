@@ -221,7 +221,7 @@ class SynkropService
                 $idProduct = $this->findProductByBsaleVariantId((int)$variantId);
                 if (!$idProduct) continue;
 
-                StockAvailable::setQuantity($idProduct, 0, (int)($stock['quantityAvailable'] ?? 0));
+                $this->setStockDirect($idProduct, (int)($stock['quantityAvailable'] ?? 0));
                 $result->updated++;
             } catch (Exception $e) {
                 $result->failed++;
