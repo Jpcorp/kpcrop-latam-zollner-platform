@@ -77,7 +77,7 @@ export function buildApp(syncQueue: Queue<SyncJobData>) {
   app.register(licenseRoute,    { prefix: '/v1' });
   app.register(syncReportRoute, { prefix: '/v1' });
   app.register(webhooksRoute,   { prefix: '/v1', queue: syncQueue });
-  app.register(adminRoute,      { prefix: '/v1' });
+  app.register(adminRoute,      { prefix: '/v1', queue: syncQueue });
 
   return app;
 }

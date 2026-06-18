@@ -90,12 +90,70 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
 async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): Promise<void> {
   if (!data.resourceUrl) return;
 
-  // Segunda llamada a Bsale para obtener el objeto completo (webhook solo da el ID)
-  const resource = await bsale.get<Record<string, unknown>>(data.resourceUrl);
+  // Mapear topic de Bsale → entity de Synkrop
+  const topicToEntity: Record<string, string> = {
+    stock:   'stock',
+    price:   'prices',
+    product: 'products',
+    variant: 'products',
+  };
+  const entity = topicToEntity[data.topic ?? ''] ?? 'products';
 
-  // TODO: traducir resource a CanonicalProduct y sincronizar al CMS
-  // La implementacion concreta depende del CMS (plugin recibe webhook o comando HTTP)
-  console.log(`[webhook] ${data.topic} ${data.action} resource:`, resource['id']);
+  // Obtener URL del CMS y secret para llamar al plugin
+  const store = await db
+    .selectFrom('tenant_stores')
+    .select(['cms_url', 'cms_webhook_secret'])
+    .where('id', '=', data.storeId)
+    .executeTakeFirstOrThrow();
+
+  if (!store.cms_url) {
+    throw new Error(`Store ${data.storeId} no tiene cms_url configurada`);
+  }
+
+  // Construir URL del endpoint AJAX de Synkrop en PrestaShop
+  // El token PS se omite aquí porque el plugin valida por cms_webhook_secret (header)
+  const ajaxUrl = `${store.cms_url.replace(/\/$/, '')}/modules/synkrop/webhook.php`;
+
+  const payload = {
+    entity,
+    topic:      data.topic,
+    action:     data.action,
+    resourceId: data.resourceId,
+  };
+
+  const response = await fetch(ajaxUrl, {
+    method:  'POST',
+    headers: {
+      'Content-Type':        'application/json',
+      'X-Synkrop-Secret':    store.cms_webhook_secret ?? '',
+    },
+    body:    JSON.stringify(payload),
+    signal:  AbortSignal.timeout(30_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Synkrop webhook endpoint respondió ${response.status} en ${ajaxUrl}`);
+  }
+
+  const result = await response.json() as { success: boolean; updated?: number; message?: string };
+
+  if (!result.success) {
+    throw new Error(`Synkrop sync falló: ${result.message ?? 'error desconocido'}`);
+  }
+
+  console.log(`[webhook] ${data.topic}:${data.action} entity=${entity} updated=${result.updated ?? 0} store=${data.storeId}`);
+
+  // Registrar evento exitoso
+  await db.insertInto('sync_events').values({
+    tenant_id:       data.tenantId,
+    store_id:        data.storeId,
+    sync_type:       'webhook',
+    entity_type:     entity,
+    status:          'success',
+    records_updated: result.updated ?? 0,
+    records_failed:  0,
+    idempotency_key: null,
+  }).execute();
 }
 
 async function processPollingCycle(

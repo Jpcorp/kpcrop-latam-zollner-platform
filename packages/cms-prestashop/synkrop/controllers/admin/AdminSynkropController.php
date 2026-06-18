@@ -78,14 +78,24 @@ class AdminSynkropController extends ModuleAdminController
                 ),
             ]));
         } catch (LicenseException $e) {
+            $failed = new SyncResult();
+            $failed->failed = 1;
+            $failed->errors = [['code' => 'LICENSE_ERROR', 'message' => $e->getMessage()]];
+            $this->logSync('manual', $entityType, $failed);
             $this->ajaxDie(json_encode([
                 'success' => false,
+                'status'  => 'failed',
                 'code'    => 'LICENSE_ERROR',
                 'message' => $e->getMessage(),
             ]));
         } catch (Exception $e) {
+            $failed = new SyncResult();
+            $failed->failed = 1;
+            $failed->errors = [['code' => 'SYNC_ERROR', 'message' => $e->getMessage()]];
+            $this->logSync('manual', $entityType, $failed);
             $this->ajaxDie(json_encode([
                 'success' => false,
+                'status'  => 'failed',
                 'code'    => 'SYNC_ERROR',
                 'message' => $e->getMessage(),
             ]));

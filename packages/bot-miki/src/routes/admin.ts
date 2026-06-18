@@ -1,13 +1,16 @@
 import type { FastifyInstance } from 'fastify';
+import type { Queue } from 'bullmq';
 import { db } from '../infrastructure/database.js';
 import { config } from '../config.js';
+import type { SyncJobData } from '../workers/sync-worker.js';
 import crypto from 'node:crypto';
 
 function generateApiKey(): string {
   return 'kp_' + crypto.randomBytes(24).toString('hex');
 }
 
-export async function adminRoute(app: FastifyInstance) {
+export async function adminRoute(app: FastifyInstance, opts: { queue: Queue<SyncJobData> }) {
+  const { queue } = opts;
   // Middleware: verify X-Admin-Key on all /admin routes
   app.addHook('onRequest', async (request, reply) => {
     const key = request.headers['x-admin-key'];
@@ -292,6 +295,209 @@ export async function adminRoute(app: FastifyInstance) {
         cmsType:   store.cms_type,
         cmsUrl:    store.cms_url,
         createdAt: (store.created_at as Date).toISOString(),
+      });
+    },
+  );
+
+  // ─── PATCH /v1/admin/tenants/:tenantId/stores/:storeId ──────────────────────
+
+  app.patch<{
+    Params: { tenantId: string; storeId: string };
+    Body: {
+      bsaleIntegrationId?: number;
+      bsaleAccessToken?: string;
+      bsalePriceListId?: number;
+      bsaleOfficeId?: number;
+      cmsWebhookSecret?: string;
+    };
+  }>(
+    '/admin/tenants/:tenantId/stores/:storeId',
+    {
+      schema: {
+        tags: ['admin'],
+        summary: 'Actualizar datos de una tienda',
+        security: [{ adminKey: [] }],
+        params: {
+          type: 'object',
+          required: ['tenantId', 'storeId'],
+          properties: {
+            tenantId: { type: 'string' },
+            storeId:  { type: 'string' },
+          },
+        },
+        body: {
+          type: 'object',
+          properties: {
+            bsaleIntegrationId: { type: 'number', description: 'cpnId de Bsale (necesario para webhooks)' },
+            bsaleAccessToken:   { type: 'string' },
+            bsalePriceListId:   { type: 'number' },
+            bsaleOfficeId:      { type: 'number' },
+            cmsWebhookSecret:   { type: 'string', description: 'Secret para verificar llamadas del CMS' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { tenantId, storeId } = request.params;
+      const body = request.body;
+
+      const license = await db
+        .selectFrom('licenses')
+        .select('id')
+        .where('tenant_id', '=', tenantId)
+        .executeTakeFirst();
+
+      if (!license) {
+        return reply.code(404).send({ code: 'TENANT_NOT_FOUND', message: `Tenant '${tenantId}' no encontrado` });
+      }
+
+      const updates: Record<string, unknown> = {};
+      if (body.bsaleIntegrationId !== undefined) updates.bsale_integration_id = body.bsaleIntegrationId;
+      if (body.bsaleAccessToken   !== undefined) updates.bsale_access_token   = body.bsaleAccessToken;
+      if (body.bsalePriceListId   !== undefined) updates.bsale_price_list_id  = body.bsalePriceListId;
+      if (body.bsaleOfficeId      !== undefined) updates.bsale_office_id      = body.bsaleOfficeId;
+      if (body.cmsWebhookSecret   !== undefined) updates.cms_webhook_secret   = body.cmsWebhookSecret;
+
+      if (Object.keys(updates).length === 0) {
+        return reply.code(400).send({ code: 'NO_FIELDS', message: 'Ningún campo para actualizar' });
+      }
+
+      const store = await db
+        .updateTable('tenant_stores')
+        .set(updates)
+        .where('id', '=', storeId)
+        .where('license_id', '=', license.id as string)
+        .returningAll()
+        .executeTakeFirst();
+
+      if (!store) {
+        return reply.code(404).send({ code: 'STORE_NOT_FOUND', message: `Tienda '${storeId}' no encontrada` });
+      }
+
+      return reply.send({ id: store.id, storeName: store.store_name, updated: Object.keys(updates) });
+    },
+  );
+
+  // ─── GET /v1/admin/observability ────────────────────────────────────────────
+
+  app.get<{
+    Querystring: {
+      tenantId?: string;
+      storeId?:  string;
+      status?:   string;
+      limit?:    number;
+    };
+  }>(
+    '/admin/observability',
+    {
+      schema: {
+        tags: ['admin'],
+        summary: 'Estado de sync jobs, eventos y webhooks registrados',
+        description: 'Panel de observabilidad: muestra el estado de la cola BullMQ, últimos eventos de sync (incluyendo dead letters) y registros de webhooks.',
+        security: [{ adminKey: [] }],
+        querystring: {
+          type: 'object',
+          properties: {
+            tenantId: { type: 'string', description: 'Filtrar por tenant' },
+            storeId:  { type: 'string', description: 'Filtrar por tienda' },
+            status:   { type: 'string', description: 'Filtrar por status (failed, dead_letter, success, etc.)' },
+            limit:    { type: 'number', default: 50, description: 'Máximo de eventos a devolver' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const { tenantId, storeId, status, limit = 50 } = request.query;
+
+      // 1. Estado de la cola BullMQ
+      const [waiting, active, completed, failed, delayed] = await Promise.all([
+        queue.getWaitingCount(),
+        queue.getActiveCount(),
+        queue.getCompletedCount(),
+        queue.getFailedCount(),
+        queue.getDelayedCount(),
+      ]);
+
+      // 2. Últimos sync_events con nombre de tienda
+      let eventsQuery = db
+        .selectFrom('sync_events as e')
+        .leftJoin('tenant_stores as s', 's.id', 'e.store_id')
+        .select([
+          'e.id',
+          'e.tenant_id',
+          'e.store_id',
+          's.store_name',
+          'e.sync_type',
+          'e.entity_type',
+          'e.status',
+          'e.records_updated',
+          'e.records_failed',
+          'e.duration_ms',
+          'e.error_message',
+          'e.idempotency_key',
+          'e.created_at',
+        ])
+        .orderBy('e.created_at', 'desc')
+        .limit(Math.min(limit, 200));
+
+      if (tenantId) eventsQuery = eventsQuery.where('e.tenant_id', '=', tenantId);
+      if (storeId)  eventsQuery = eventsQuery.where('e.store_id',  '=', storeId);
+      if (status)   eventsQuery = eventsQuery.where('e.status',    '=', status);
+
+      const events = await eventsQuery.execute();
+
+      // 3. Webhooks registrados
+      let webhooksQuery = db
+        .selectFrom('webhook_registrations as w')
+        .leftJoin('tenant_stores as s', 's.id', 'w.store_id')
+        .select([
+          'w.id',
+          'w.store_id',
+          's.store_name',
+          'w.bsale_cpn_id',
+          'w.topics',
+          'w.status',
+          'w.notes',
+          'w.requested_at',
+          'w.activated_at',
+        ])
+        .orderBy('w.requested_at', 'desc');
+
+      if (storeId) webhooksQuery = webhooksQuery.where('w.store_id', '=', storeId);
+
+      const webhooks = await webhooksQuery.execute();
+
+      // 4. Resumen de dead letters por tenant/store
+      const deadLetters = events.filter(e => e.status === 'dead_letter');
+
+      return reply.send({
+        queue: {
+          waiting,
+          active,
+          completed,
+          failed,
+          delayed,
+          health: failed > 10 ? 'degraded' : active > 50 ? 'busy' : 'ok',
+        },
+        summary: {
+          total:      events.length,
+          deadLetters: deadLetters.length,
+          byStatus:   Object.fromEntries(
+            [...new Set(events.map(e => e.status))].map(s => [
+              s,
+              events.filter(e => e.status === s).length,
+            ])
+          ),
+        },
+        events: events.map(e => ({
+          ...e,
+          created_at: (e.created_at as Date).toISOString(),
+        })),
+        webhooks: webhooks.map(w => ({
+          ...w,
+          requested_at: (w.requested_at as Date).toISOString(),
+          activated_at: w.activated_at ? (w.activated_at as Date).toISOString() : null,
+        })),
       });
     },
   );
