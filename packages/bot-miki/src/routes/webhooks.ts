@@ -62,7 +62,7 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
       }
 
       // Encolar job — el worker hace la segunda llamada a Bsale para obtener datos completos
-      const idempotencyKey = `webhook:${store.id}:${payload.topic}:${payload.resourceId}:${payload.send}`;
+      const idempotencyKey = `webhook_${store.id}_${payload.topic}_${payload.resourceId}_${payload.send}`;
       await queue.add(
         'bsale-webhook',
         {
