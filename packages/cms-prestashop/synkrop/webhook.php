@@ -42,16 +42,18 @@ if (!in_array($entity, ['products', 'stock', 'prices'])) {
 
 // ── Responder 200 inmediatamente para no bloquear el timeout de bot-miki ──────
 
-http_response_code(200);
-echo json_encode(['success' => true, 'status' => 'accepted', 'message' => 'Sync iniciado en background']);
+$responseBody = json_encode(['success' => true, 'status' => 'accepted', 'message' => 'Sync iniciado en background']);
 
-// Vaciar buffer y cerrar la conexión HTTP antes de procesar
+// Content-Length es crítico: sin él fetch/curl espera cierre de conexión TCP
+header('Content-Length: ' . strlen($responseBody));
+header('Connection: close');
+http_response_code(200);
+echo $responseBody;
+
+// Cerrar la conexión HTTP con el cliente y continuar el proceso en background
 if (function_exists('fastcgi_finish_request')) {
     fastcgi_finish_request();
 } else {
-    // Fallback: forzar flush y desconectar al cliente
-    header('Connection: close');
-    header('Content-Length: ' . ob_get_length());
     ob_end_flush();
     flush();
 }

@@ -49,11 +49,12 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
         return reply.code(200).send(); // Aceptar pero ignorar
       }
 
-      // Buscar tenant por cpnId de Bsale
+      // Buscar tenant por cpnId de Bsale — join con licenses para obtener el tenant_id string
       const store = await db
-        .selectFrom('tenant_stores')
-        .selectAll()
-        .where('bsale_integration_id', '=', payload.cpnId)
+        .selectFrom('tenant_stores as s')
+        .innerJoin('licenses as l', 'l.id', 's.license_id')
+        .select(['s.id', 's.license_id', 'l.tenant_id'])
+        .where('s.bsale_integration_id', '=', payload.cpnId)
         .executeTakeFirst();
 
       if (!store) {
@@ -67,7 +68,7 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
         'bsale-webhook',
         {
           storeId:     store.id,
-          tenantId:    store.license_id,
+          tenantId:    store.tenant_id,
           syncType:    'webhook',
           resourceUrl: payload.resource,
           resourceId:  payload.resourceId,
