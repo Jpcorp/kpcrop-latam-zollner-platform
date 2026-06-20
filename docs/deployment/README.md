@@ -150,3 +150,6 @@ Railway reinicia automaticamente si el health check falla 3 veces consecutivas
 - [ ] Plugin instalado en el PrestaShop del cliente
 - [ ] Primer sync manual exitoso con datos reales del cliente
 - [ ] Cliente puede repetir el sync sin duplicados
+- [ ] Webhooks de Bsale registrados y sincronizacion automatica activa
+
+Ver guia completa: [webhook-auto-sync.md](./webhook-auto-sync.md)
