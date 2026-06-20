@@ -128,7 +128,7 @@ describe('POST /v1/webhooks/bsale', () => {
       topic: 'product',
       resourceId: '952',
     });
-    expect(jobOpts.jobId).toContain('webhook:store-uuid-1:product:952');
+    expect(jobOpts.jobId).toBe('webhook_store-uuid-1_product_952_1700000000');
     expect(jobOpts.attempts).toBe(5);
     await app.close();
   });

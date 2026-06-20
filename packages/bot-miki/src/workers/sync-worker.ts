@@ -88,7 +88,7 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
   }
 }
 
-async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): Promise<void> {
+export async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): Promise<void> {
   if (!data.resourceUrl) return;
 
   const store = await db
