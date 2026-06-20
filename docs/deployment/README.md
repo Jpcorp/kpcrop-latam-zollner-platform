@@ -6,7 +6,7 @@
 
 | Componente | URL / Estado |
 |---|---|
-| **bot-miki** | `https://kpcrop-latam-zollner-platform-production.up.railway.app` |
+| **bot-miki** | `https://miki.keepcrop.com` |
 | **Health** | `GET /health` → `{"status":"ok","version":"0.0.1"}` |
 | **Swagger UI** | `GET /docs` |
 | **PostgreSQL** | Railway managed — migracion auto-aplicada en startup |
@@ -34,20 +34,18 @@ Al instalar el modulo `synkrop` en el PrestaShop del cliente, configurar en
 |---|---|
 | Token de acceso Bsale | *(token de la cuenta Bsale del cliente)* |
 | API Key de licencia kpcrop | Ver `docs/deployment/secrets.md` |
-| daemon_api_url (config avanzada) | `https://kpcrop-latam-zollner-platform-production.up.railway.app` |
+| daemon_api_url (config avanzada) | `https://miki.keepcrop.com` |
 | Lista de precios Bsale (config avanzada) | ID de lista del cliente (ej: `1`) |
 
-> **Nota dominio:** `api.espaciobits.com` esta registrado con CNAME correcto pero Railway
-> no puede emitir el cert SSL porque `espaciobits.com` raiz apunta a otro hosting.
-> Mientras se resuelve, usar la URL de Railway directamente. El cambio futuro es
-> solo actualizar `daemon_api_url` en la tabla `synkrop_config` del cliente.
+> **Dominio activo:** `miki.keepcrop.com` con SSL gestionado por Railway.
+> CNAME configurado en Cloudflare: `miki` → `aej8mwgs.up.railway.app`.
 
 ---
 
 ## Crear nuevo tenant (nuevo cliente)
 
 ```bash
-curl -X POST https://kpcrop-latam-zollner-platform-production.up.railway.app/v1/admin/tenants \
+curl -X POST https://miki.keepcrop.com/v1/admin/tenants \
   -H "X-Admin-Key: <ADMIN_KEY>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -133,7 +131,7 @@ No es necesario ejecutarla manualmente en Railway.
 railway logs --service kpcrop-latam-zollner-platform --tail
 
 # Health check
-curl https://kpcrop-latam-zollner-platform-production.up.railway.app/health
+curl https://miki.keepcrop.com/health
 ```
 
 Railway reinicia automaticamente si el health check falla 3 veces consecutivas

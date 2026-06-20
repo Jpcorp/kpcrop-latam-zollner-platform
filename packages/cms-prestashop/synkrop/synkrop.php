@@ -8,7 +8,7 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-define('SYNKROP_DAEMON_URL', 'https://kpcrop-latam-zollner-platform-production.up.railway.app');
+define('SYNKROP_DAEMON_URL', 'https://miki.keepcrop.com');
 
 // Autoload de clases del modulo
 require_once __DIR__ . '/classes/BsaleApiClient.php';
