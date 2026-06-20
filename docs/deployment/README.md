@@ -147,9 +147,17 @@ Railway reinicia automaticamente si el health check falla 3 veces consecutivas
 - [x] Tenant creado via `POST /v1/admin/tenants`
 - [x] API Key entregada al cliente (o configurada en el plugin)
 - [x] `GET /v1/license/token` con la API Key devuelve JWT valido
-- [ ] Plugin instalado en el PrestaShop del cliente
-- [ ] Primer sync manual exitoso con datos reales del cliente
+- [ ] Plugin instalado en el PrestaShop del cliente → [plugin-install.md](./plugin-install.md)
+- [ ] Primer sync manual exitoso con datos reales del cliente → [sync-manual.md](./sync-manual.md)
 - [ ] Cliente puede repetir el sync sin duplicados
-- [ ] Webhooks de Bsale registrados y sincronizacion automatica activa
+- [ ] Webhooks de Bsale registrados y sincronizacion automatica activa → [webhook-auto-sync.md](./webhook-auto-sync.md)
 
-Ver guia completa: [webhook-auto-sync.md](./webhook-auto-sync.md)
+### Guias de referencia
+
+| Guia | Descripcion |
+|------|-------------|
+| [plugin-install.md](./plugin-install.md) | Instalacion del modulo en PrestaShop |
+| [sync-manual.md](./sync-manual.md) | Sincronizacion manual de productos, stock y precios |
+| [webhook-auto-sync.md](./webhook-auto-sync.md) | Configuracion de sincronizacion automatica via webhooks |
+| [production-config.md](./production-config.md) | Variables de entorno y configuracion de produccion |
+| [secrets.md](./secrets.md) | Manejo de secretos (no versionado en repo) |
