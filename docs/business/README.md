@@ -18,7 +18,8 @@ Este directorio contiene el analisis estrategico de negocio del proyecto. Los do
 | Documento | Descripcion | Estado |
 |---|---|---|
 | [Estudio de Mercado](./market-study.md) | TAM/SAM/SOM para Chile y LATAM, analisis competitivo, propuesta de valor, canales de adquisicion | Borrador v1.0 |
-| [Estrategia de Pricing](./pricing-strategy.md) | Modelo de negocio recomendado, tiers con precios, proyeccion de ingresos a 12 meses | Borrador v1.0 |
+| [Estrategia de Pricing](./pricing-strategy.md) | Modelo de negocio recomendado, tiers con precios, proyeccion de ingresos a 12 meses | v2.0 — Pivot agencias |
+| [Analisis Pricing Canal Agencias](./agency-pricing-analysis.md) | Costos reales por agencia, margen por plan, economia para la agencia, oferta beta | v1.0 — 2026-06-20 |
 | [Buyer Personas](./buyer-personas.md) | 4 perfiles de cliente con dolores, canales, willingness to pay y mapa de empatia | v1.1 — con Mapas de Empatia |
 | [Plan Go-to-Market](./go-to-market.md) | Canales, mensajes, secuencia de lanzamiento, metricas de exito | Borrador v1.0 |
 
