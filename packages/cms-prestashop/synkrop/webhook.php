@@ -31,13 +31,19 @@ if (empty($expectedSecret) || !hash_equals($expectedSecret, $receivedSecret)) {
 
 // ── Payload ───────────────────────────────────────────────────────────────────
 
-$body   = json_decode(file_get_contents('php://input'), true) ?? [];
-$entity = $body['entity'] ?? 'stock';
+$body = json_decode(file_get_contents('php://input'), true) ?? [];
 
-if (!in_array($entity, ['products', 'stock', 'prices'])) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'entity inválido: ' . $entity]);
-    exit;
+// Modo quirúrgico: bot-miki resolvió el recurso concreto de Bsale
+$isSurgical = isset($body['bsaleData']) && isset($body['topic']);
+
+if (!$isSurgical) {
+    // Modo bulk: compatibilidad con sync manual y fallback price
+    $entity = $body['entity'] ?? 'stock';
+    if (!in_array($entity, ['products', 'stock', 'prices'])) {
+        http_response_code(400);
+        echo json_encode(['success' => false, 'error' => 'entity inválido: ' . $entity]);
+        exit;
+    }
 }
 
 // ── Responder 200 inmediatamente para no bloquear el timeout de bot-miki ──────
@@ -81,12 +87,15 @@ try {
     );
     $service = new SynkropService($bsale, $license, 1);
 
-    $result = $service->sync($entity);
+    $logEntity = $isSurgical ? $body['topic'] : $entity;
+    $result    = $isSurgical
+        ? $service->syncSingle($body['topic'], $body['bsaleData'])
+        : $service->sync($entity);
 
     Db::getInstance()->insert('synkrop_log', [
         'id_shop'      => 1,
         'sync_type'    => 'webhook',
-        'entity_type'  => pSQL($entity),
+        'entity_type'  => pSQL($logEntity),
         'status'       => pSQL($result->status()),
         'records_ok'   => $result->updated,
         'records_fail' => $result->failed,
@@ -94,10 +103,11 @@ try {
         'error_details'=> $result->errors ? pSQL(json_encode($result->errors)) : null,
     ]);
 } catch (Exception $e) {
+    $logEntity = $isSurgical ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
     Db::getInstance()->insert('synkrop_log', [
         'id_shop'      => 1,
         'sync_type'    => 'webhook',
-        'entity_type'  => pSQL($entity),
+        'entity_type'  => pSQL($logEntity),
         'status'       => 'failed',
         'records_ok'   => 0,
         'records_fail' => 1,

@@ -22,6 +22,59 @@ class SynkropService
     }
 
     /**
+     * Sync quirúrgico: actualiza solo el recurso que cambió según el topic del webhook.
+     * Llamado por webhook.php cuando bot-miki resuelve el recurso concreto de Bsale.
+     */
+    public function syncSingle(string $topic, array $bsaleData): SyncResult
+    {
+        $this->license->getToken();
+        $start  = microtime(true);
+        $result = new SyncResult();
+
+        switch ($topic) {
+            case 'stock':
+                $variantId = (int)($bsaleData['variant']['id'] ?? 0);
+                if ($variantId) {
+                    $idProduct = $this->findProductByBsaleVariantId($variantId);
+                    if ($idProduct) {
+                        $this->setStockDirect($idProduct, (int)($bsaleData['quantityAvailable'] ?? 0));
+                        $result->updated = 1;
+                    }
+                }
+                break;
+
+            case 'variant':
+                // expand=[product] viene inline — si no, usamos description como nombre
+                $product = $bsaleData['product'] ?? [
+                    'name'        => $bsaleData['description'] ?? $bsaleData['code'] ?? '',
+                    'description' => '',
+                    'state'       => $bsaleData['state'] ?? 1,
+                ];
+                $this->upsertVariant($product, $bsaleData);
+                $result->updated = 1;
+                break;
+
+            case 'product':
+                foreach ($bsaleData['variants']['items'] ?? [] as $variant) {
+                    try {
+                        $this->upsertVariant($bsaleData, $variant);
+                        $result->updated++;
+                    } catch (Exception $e) {
+                        $result->failed++;
+                        $result->errors[] = [
+                            'code'    => $variant['code'] ?? '?',
+                            'message' => $e->getMessage(),
+                        ];
+                    }
+                }
+                break;
+        }
+
+        $result->durationMs = (int)((microtime(true) - $start) * 1000);
+        return $result;
+    }
+
+    /**
      * Punto de entrada principal. Devuelve el resultado del sync.
      */
     public function sync(string $entityType = 'products'): SyncResult

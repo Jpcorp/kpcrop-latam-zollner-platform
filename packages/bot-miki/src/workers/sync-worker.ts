@@ -3,6 +3,7 @@ import { Redis as IORedis } from 'ioredis';
 import { config } from '../config.js';
 import { db } from '../infrastructure/database.js';
 import { BsaleHttpClient, BsaleApiError } from '../infrastructure/bsale-http-client.js';
+import { resolveWebhookResource } from '../adapters/bsale-webhook-resolver.js';
 
 export interface SyncJobData {
   storeId: string;
@@ -90,16 +91,6 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
 async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): Promise<void> {
   if (!data.resourceUrl) return;
 
-  // Mapear topic de Bsale → entity de Synkrop
-  const topicToEntity: Record<string, string> = {
-    stock:   'stock',
-    price:   'prices',
-    product: 'products',
-    variant: 'products',
-  };
-  const entity = topicToEntity[data.topic ?? ''] ?? 'products';
-
-  // Obtener URL del CMS y secret para llamar al plugin
   const store = await db
     .selectFrom('tenant_stores')
     .select(['cms_url', 'cms_webhook_secret'])
@@ -110,25 +101,27 @@ async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): P
     throw new Error(`Store ${data.storeId} no tiene cms_url configurada`);
   }
 
-  // Construir URL del endpoint AJAX de Synkrop en PrestaShop
-  // El token PS se omite aquí porque el plugin valida por cms_webhook_secret (header)
-  const ajaxUrl = `${store.cms_url.replace(/\/$/, '')}/modules/synkrop/webhook.php`;
+  // Obtener el recurso concreto de Bsale (solo el que cambió)
+  const resolved = await resolveWebhookResource(bsale, data.topic ?? '', data.resourceUrl);
 
-  const payload = {
-    entity,
-    topic:      data.topic,
-    action:     data.action,
-    resourceId: data.resourceId,
+  // Payload quirúrgico si tenemos datos; bulk como fallback para topic=price
+  const topicToEntity: Record<string, string> = {
+    stock: 'stock', price: 'prices', product: 'products', variant: 'products',
   };
+  const body = resolved.data !== null
+    ? { topic: resolved.topic, bsaleData: resolved.data }
+    : { entity: topicToEntity[data.topic ?? ''] ?? 'products' };
+
+  const ajaxUrl = `${store.cms_url.replace(/\/$/, '')}/modules/synkrop/webhook.php`;
 
   const response = await fetch(ajaxUrl, {
     method:  'POST',
     headers: {
-      'Content-Type':        'application/json',
-      'X-Synkrop-Secret':    store.cms_webhook_secret ?? '',
+      'Content-Type':     'application/json',
+      'X-Synkrop-Secret': store.cms_webhook_secret ?? '',
     },
-    body:    JSON.stringify(payload),
-    signal:  AbortSignal.timeout(30_000),
+    body:   JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
   });
 
   if (!response.ok) {
@@ -141,14 +134,13 @@ async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): P
     throw new Error(`Synkrop sync falló: ${result.message ?? 'error desconocido'}`);
   }
 
-  console.log(`[webhook] ${data.topic}:${data.action} entity=${entity} updated=${result.updated ?? 0} store=${data.storeId}`);
+  console.log(`[webhook] ${data.topic}:${data.action} updated=${result.updated ?? 0} store=${data.storeId}`);
 
-  // Registrar evento exitoso
   await db.insertInto('sync_events').values({
     tenant_id:       data.tenantId,
     store_id:        data.storeId,
     sync_type:       'webhook',
-    entity_type:     entity,
+    entity_type:     data.topic ?? 'unknown',
     status:          'success',
     records_updated: result.updated ?? 0,
     records_failed:  0,
