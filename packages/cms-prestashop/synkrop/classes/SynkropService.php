@@ -34,12 +34,24 @@ class SynkropService
         switch ($topic) {
             case 'stock':
                 $variantId = (int)($bsaleData['variant']['id'] ?? 0);
-                if ($variantId) {
-                    $idProduct = $this->findProductByBsaleVariantId($variantId);
-                    if ($idProduct) {
-                        $this->setStockDirect($idProduct, (int)($bsaleData['quantityAvailable'] ?? 0));
-                        $result->updated = 1;
-                    }
+                if (!$variantId) {
+                    $result->failed++;
+                    $result->errors[] = [
+                        'code'    => '0',
+                        'message' => 'Webhook de stock sin variant.id — payload inválido.',
+                    ];
+                    break;
+                }
+                $idProduct = $this->findProductByBsaleVariantId($variantId);
+                if ($idProduct) {
+                    $this->setStockDirect($idProduct, (int)($bsaleData['quantityAvailable'] ?? 0));
+                    $result->updated = 1;
+                } else {
+                    $result->failed++;
+                    $result->errors[] = [
+                        'code'    => (string)$variantId,
+                        'message' => "Variante Bsale #{$variantId} no encontrada en el mapa local. Ejecuta un Sync de Productos primero.",
+                    ];
                 }
                 break;
 
