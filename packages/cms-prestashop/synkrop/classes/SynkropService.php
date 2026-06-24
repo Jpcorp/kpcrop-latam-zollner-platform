@@ -34,12 +34,33 @@ class SynkropService
         switch ($topic) {
             case 'stock':
                 $variantId = (int)($bsaleData['variant']['id'] ?? 0);
-                if ($variantId) {
-                    $idProduct = $this->findProductByBsaleVariantId($variantId);
-                    if ($idProduct) {
-                        $this->setStockDirect($idProduct, (int)($bsaleData['quantityAvailable'] ?? 0));
-                        $result->updated = 1;
-                    }
+                if (!$variantId) {
+                    $stockId    = (int)($bsaleData['id'] ?? 0);
+                    $officeName = $bsaleData['office']['name'] ?? null;
+                    $context = $stockId
+                        ? "Stock Bsale #$stockId" . ($officeName ? " (oficina: $officeName)" : '') .
+                          ". Consulta /v1/stocks/$stockId.json en Bsale." .
+                          " Causa más probable: ajuste de inventario manual sin variante asignada." .
+                          " Si pertenece a un producto real, vincula su variante en Bsale y luego ejecuta Sync de Productos."
+                        : "El payload no incluye id ni variant.id." .
+                          " Revisa los logs de bot-miki para ver el recurso original que envió Bsale.";
+                    $result->failed++;
+                    $result->errors[] = [
+                        'code'    => '0',
+                        'message' => "Webhook de stock sin variant.id — payload inválido. $context",
+                    ];
+                    break;
+                }
+                $idProduct = $this->findProductByBsaleVariantId($variantId);
+                if ($idProduct) {
+                    $this->setStockDirect($idProduct, (int)($bsaleData['quantityAvailable'] ?? 0));
+                    $result->updated = 1;
+                } else {
+                    $result->failed++;
+                    $result->errors[] = [
+                        'code'    => (string)$variantId,
+                        'message' => "Variante Bsale #{$variantId} no encontrada en el mapa local. Ejecuta un Sync de Productos primero.",
+                    ];
                 }
                 break;
 

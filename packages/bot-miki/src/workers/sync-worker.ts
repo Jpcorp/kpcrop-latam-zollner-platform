@@ -66,7 +66,7 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
 
   try {
     if (job.data.syncType === 'webhook' && job.data.resourceUrl) {
-      await processWebhookEvent(job.data, bsale);
+      await processWebhookEvent(job.data, bsale, job.id ?? undefined);
     } else {
       await processPollingCycle(job.data, bsale, store.id);
     }
@@ -88,7 +88,11 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
   }
 }
 
-async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): Promise<void> {
+export async function processWebhookEvent(
+  data: SyncJobData,
+  bsale: BsaleHttpClient,
+  jobId?: string,
+): Promise<void> {
   if (!data.resourceUrl) return;
 
   const store = await db
@@ -101,8 +105,12 @@ async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): P
     throw new Error(`Store ${data.storeId} no tiene cms_url configurada`);
   }
 
+  console.log(`[webhook:start] jobId=${jobId ?? '-'} topic=${data.topic} action=${data.action} store=${data.storeId}`);
+
   // Obtener el recurso concreto de Bsale (solo el que cambió)
   const resolved = await resolveWebhookResource(bsale, data.topic ?? '', data.resourceUrl);
+
+  console.log(`[webhook:resolved] jobId=${jobId ?? '-'} topic=${resolved.topic} hasData=${resolved.data !== null}`);
 
   // Payload quirúrgico si tenemos datos; bulk como fallback para topic=price
   const topicToEntity: Record<string, string> = {
@@ -114,12 +122,17 @@ async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): P
 
   const ajaxUrl = `${store.cms_url.replace(/\/$/, '')}/modules/synkrop/webhook.php`;
 
+  const headers: Record<string, string> = {
+    'Content-Type':     'application/json',
+    'X-Synkrop-Secret': store.cms_webhook_secret ?? '',
+  };
+  if (jobId) headers['X-Synkrop-Job-Id'] = jobId;
+
+  console.log(`[webhook:dispatch] jobId=${jobId ?? '-'} url=${ajaxUrl} payload=${JSON.stringify(body).slice(0, 120)}`);
+
   const response = await fetch(ajaxUrl, {
     method:  'POST',
-    headers: {
-      'Content-Type':     'application/json',
-      'X-Synkrop-Secret': store.cms_webhook_secret ?? '',
-    },
+    headers,
     body:   JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
@@ -134,18 +147,9 @@ async function processWebhookEvent(data: SyncJobData, bsale: BsaleHttpClient): P
     throw new Error(`Synkrop sync falló: ${result.message ?? 'error desconocido'}`);
   }
 
-  console.log(`[webhook] ${data.topic}:${data.action} updated=${result.updated ?? 0} store=${data.storeId}`);
-
-  await db.insertInto('sync_events').values({
-    tenant_id:       data.tenantId,
-    store_id:        data.storeId,
-    sync_type:       'webhook',
-    entity_type:     data.topic ?? 'unknown',
-    status:          'success',
-    records_updated: result.updated ?? 0,
-    records_failed:  0,
-    idempotency_key: null,
-  }).execute();
+  // El resultado real (records_updated, errors) llega via POST /v1/sync/report
+  // que el plugin CMS llama al terminar el proceso en background.
+  console.log(`[webhook:accepted] jobId=${jobId ?? '-'} store=${data.storeId} — CMS procesará en background`);
 }
 
 async function processPollingCycle(

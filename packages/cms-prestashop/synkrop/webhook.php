@@ -29,6 +29,10 @@ if (empty($expectedSecret) || !hash_equals($expectedSecret, $receivedSecret)) {
     exit;
 }
 
+// ── Correlation ID de bot-miki (para trazabilidad entre sync_events y synkrop_log) ──
+
+$jobId = $_SERVER['HTTP_X_SYNKROP_JOB_ID'] ?? null;
+
 // ── Payload ───────────────────────────────────────────────────────────────────
 
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
@@ -77,6 +81,11 @@ $fullConfig = Db::getInstance()->getRow(
     'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_config` WHERE id_shop = 1'
 );
 
+$syncResult  = null;
+$syncEntity  = $isSurgical ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
+$syncStatus  = 'failed';
+$syncErrMsg  = null;
+
 try {
     $decryptedToken = Synkrop::decryptToken($fullConfig['bsale_api_token']);
     $bsale   = new BsaleApiClient($decryptedToken);
@@ -87,31 +96,70 @@ try {
     );
     $service = new SynkropService($bsale, $license, 1);
 
-    $logEntity = $isSurgical ? $body['topic'] : $entity;
-    $result    = $isSurgical
+    $syncResult = $isSurgical
         ? $service->syncSingle($body['topic'], $body['bsaleData'])
         : $service->sync($entity);
+
+    $syncStatus = $syncResult->status();
 
     Db::getInstance()->insert('synkrop_log', [
         'id_shop'      => 1,
         'sync_type'    => 'webhook',
-        'entity_type'  => pSQL($logEntity),
-        'status'       => pSQL($result->status()),
-        'records_ok'   => $result->updated,
-        'records_fail' => $result->failed,
-        'duration_ms'  => $result->durationMs,
-        'error_details'=> $result->errors ? pSQL(json_encode($result->errors)) : null,
+        'entity_type'  => pSQL($syncEntity),
+        'status'       => pSQL($syncStatus),
+        'records_ok'   => $syncResult->updated,
+        'records_fail' => $syncResult->failed,
+        'duration_ms'  => $syncResult->durationMs,
+        'error_details'=> $syncResult->errors ? pSQL(json_encode($syncResult->errors)) : null,
+        'job_id'       => $jobId ? pSQL($jobId) : null,
     ]);
+
+    if (!empty($syncResult->errors)) {
+        $syncErrMsg = $syncResult->errors[0]['message'] ?? null;
+    }
 } catch (Exception $e) {
-    $logEntity = $isSurgical ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
+    $syncErrMsg = $e->getMessage();
     Db::getInstance()->insert('synkrop_log', [
         'id_shop'      => 1,
         'sync_type'    => 'webhook',
-        'entity_type'  => pSQL($logEntity),
+        'entity_type'  => pSQL($syncEntity),
         'status'       => 'failed',
         'records_ok'   => 0,
         'records_fail' => 1,
         'duration_ms'  => 0,
-        'error_details'=> pSQL($e->getMessage()),
+        'error_details'=> pSQL(json_encode([['code' => 'EXCEPTION', 'message' => $e->getMessage()]])),
+        'job_id'       => $jobId ? pSQL($jobId) : null,
     ]);
+}
+
+// ── Reportar resultado real a bot-miki (cierra el loop en sync_events) ────────
+
+if ($jobId) {
+    $topicToEntity = [
+        'stock' => 'stock', 'variant' => 'products', 'product' => 'products',
+        'price' => 'prices', 'products' => 'products', 'prices' => 'prices',
+    ];
+    $reportPayload = json_encode([
+        'tenantId'       => md5(SYNKROP_DAEMON_URL . $fullConfig['daemon_api_key']),
+        'syncType'       => 'webhook',
+        'entityType'     => $topicToEntity[$syncEntity] ?? 'products',
+        'status'         => $syncStatus,
+        'recordsUpdated' => $syncResult ? $syncResult->updated : 0,
+        'recordsFailed'  => $syncResult ? $syncResult->failed  : 1,
+        'durationMs'     => $syncResult ? $syncResult->durationMs : 0,
+        'errorMessage'   => $syncErrMsg,
+        'idempotencyKey' => $jobId,
+    ]);
+
+    @file_get_contents(
+        rtrim(SYNKROP_DAEMON_URL, '/') . '/v1/sync/report',
+        false,
+        stream_context_create(['http' => [
+            'method'         => 'POST',
+            'header'         => "Content-Type: application/json\r\nX-API-Key: " . $fullConfig['daemon_api_key'] . "\r\n",
+            'content'        => $reportPayload,
+            'timeout'        => 5,
+            'ignore_errors'  => true,
+        ]])
+    );
 }
