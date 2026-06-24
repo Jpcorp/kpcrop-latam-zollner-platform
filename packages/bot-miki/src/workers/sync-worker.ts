@@ -112,6 +112,12 @@ export async function processWebhookEvent(
 
   console.log(`[webhook:resolved] jobId=${jobId ?? '-'} topic=${resolved.topic} hasData=${resolved.data !== null}`);
 
+  // Stock con data=null = colección v2 vacía → no hay nada que sincronizar
+  if (resolved.data === null && resolved.topic !== 'price') {
+    console.log(`[webhook:skip] jobId=${jobId ?? '-'} topic=${resolved.topic} — colección vacía, omitiendo dispatch`);
+    return;
+  }
+
   // Payload quirúrgico si tenemos datos; bulk como fallback para topic=price
   const topicToEntity: Record<string, string> = {
     stock: 'stock', price: 'prices', product: 'products', variant: 'products',

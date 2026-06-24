@@ -10,6 +10,18 @@ export interface BsaleStockRaw {
   office?: { id: number; name: string };
 }
 
+// Bsale v2 envía stocks como colección de búsqueda, no como recurso individual
+interface BsaleStockV2Item {
+  variantId: number;
+  quantityAvailable: number;
+  quantityReserved: number;
+  office?: { id: number; href: string };
+}
+interface BsaleStockV2Collection {
+  count: number;
+  data: BsaleStockV2Item[];
+}
+
 export interface BsaleVariantRaw {
   id: number;
   description: string;
@@ -41,7 +53,7 @@ export interface BsaleProductRaw {
 // ── Payload tipado por topic ──────────────────────────────────────────────────
 
 export type BsaleWebhookPayload =
-  | { topic: 'stock';   data: BsaleStockRaw }
+  | { topic: 'stock';   data: BsaleStockRaw | null }  // null = colección v2 vacía
   | { topic: 'variant'; data: BsaleVariantRaw }
   | { topic: 'product'; data: BsaleProductRaw }
   | { topic: 'price';   data: null };  // price no tiene endpoint directo: fallback a bulk
@@ -60,8 +72,24 @@ export async function resolveWebhookResource(
 ): Promise<BsaleWebhookPayload> {
   switch (topic) {
     case 'stock': {
-      const data = await bsale.get<BsaleStockRaw>(resourceUrl);
-      return { topic: 'stock', data };
+      const raw = await bsale.get<BsaleStockRaw | BsaleStockV2Collection>(resourceUrl);
+      // Bsale v2 retorna una colección {count, data:[...]}; v1 retorna un recurso individual {id, variant:{...}}
+      if ('data' in raw && Array.isArray((raw as BsaleStockV2Collection).data)) {
+        const col = raw as BsaleStockV2Collection;
+        if (col.count === 0 || col.data.length === 0) return { topic: 'stock', data: null };
+        const item = col.data[0];
+        return {
+          topic: 'stock',
+          data: {
+            id: 0,
+            quantityAvailable: item.quantityAvailable,
+            quantityReserved: item.quantityReserved ?? 0,
+            variant: { id: item.variantId, href: '' },
+            office: item.office ? { id: item.office.id, name: '' } : undefined,
+          },
+        };
+      }
+      return { topic: 'stock', data: raw as BsaleStockRaw };
     }
     case 'variant': {
       const url = resourceUrl.includes('?')
