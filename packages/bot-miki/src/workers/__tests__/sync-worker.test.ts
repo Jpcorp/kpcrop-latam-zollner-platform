@@ -189,6 +189,17 @@ describe('processWebhookEvent', () => {
     });
   });
 
+  describe('stock v2 colección vacía', () => {
+    it('no llama a fetch cuando resolveWebhookResource devuelve stock data=null', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: null });
+
+      await processWebhookEvent(baseJobData, mockBsale);
+
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+  });
+
   describe('fallback bulk — price', () => {
     it('envía { entity: "prices" } cuando resolveWebhookResource devuelve data=null', async () => {
       const jobData = { ...baseJobData, topic: 'price', resourceUrl: '/v1/price_lists/1/details/456.json' };
