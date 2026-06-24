@@ -35,10 +35,19 @@ class SynkropService
             case 'stock':
                 $variantId = (int)($bsaleData['variant']['id'] ?? 0);
                 if (!$variantId) {
+                    $stockId    = (int)($bsaleData['id'] ?? 0);
+                    $officeName = $bsaleData['office']['name'] ?? null;
+                    $context = $stockId
+                        ? "Stock Bsale #$stockId" . ($officeName ? " (oficina: $officeName)" : '') .
+                          ". Consulta /v1/stocks/$stockId.json en Bsale." .
+                          " Causa más probable: ajuste de inventario manual sin variante asignada." .
+                          " Si pertenece a un producto real, vincula su variante en Bsale y luego ejecuta Sync de Productos."
+                        : "El payload no incluye id ni variant.id." .
+                          " Revisa los logs de bot-miki para ver el recurso original que envió Bsale.";
                     $result->failed++;
                     $result->errors[] = [
                         'code'    => '0',
-                        'message' => 'Webhook de stock sin variant.id — payload inválido.',
+                        'message' => "Webhook de stock sin variant.id — payload inválido. $context",
                     ];
                     break;
                 }

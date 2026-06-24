@@ -61,9 +61,11 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_log` (
     `records_fail`  INT NOT NULL DEFAULT 0,
     `duration_ms`   INT NOT NULL DEFAULT 0,
     `error_details` JSON DEFAULT NULL,
+    `job_id`        VARCHAR(200) DEFAULT NULL,
     `created_at`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_shop_date` (`id_shop`, `created_at`)
+    KEY `idx_shop_date` (`id_shop`, `created_at`),
+    KEY `idx_job_id`    (`job_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Mapeo grupo de clientes PrestaShop → lista de precios Bsale

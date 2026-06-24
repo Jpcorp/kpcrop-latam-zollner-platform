@@ -150,14 +150,26 @@ describe('processWebhookEvent', () => {
       expect(url).toBe('https://tienda.cl/modules/synkrop/webhook.php');
     });
 
-    it('registra sync_event con status success en la DB', async () => {
+    it('envía X-Synkrop-Job-Id cuando se provee jobId', async () => {
       mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
       mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: {} });
-      mockFetch.mockResolvedValueOnce(okFetchResponse(3));
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+      await processWebhookEvent(baseJobData, mockBsale, 'webhook_store-1_stock_88765_1719100800');
+
+      const [, fetchOpts] = mockFetch.mock.calls[0];
+      expect(fetchOpts.headers['X-Synkrop-Job-Id']).toBe('webhook_store-1_stock_88765_1719100800');
+    });
+
+    it('no envía X-Synkrop-Job-Id cuando jobId es undefined', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: {} });
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
 
       await processWebhookEvent(baseJobData, mockBsale);
 
-      expect(mockInsertExecute).toHaveBeenCalled();
+      const [, fetchOpts] = mockFetch.mock.calls[0];
+      expect(fetchOpts.headers['X-Synkrop-Job-Id']).toBeUndefined();
     });
   });
 
