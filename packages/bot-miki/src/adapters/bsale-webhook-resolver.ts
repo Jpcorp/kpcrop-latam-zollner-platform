@@ -77,19 +77,37 @@ export async function resolveWebhookResource(
       if ('data' in raw && Array.isArray((raw as BsaleStockV2Collection).data)) {
         const col = raw as BsaleStockV2Collection;
         if (col.count === 0 || col.data.length === 0) return { topic: 'stock', data: null };
-        const item = col.data[0];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const item = col.data[0] as any;
+        // La API v2 puede usar variantId, variant_id, o variant.id según versión
+        const variantId: number =
+          item.variantId ?? item.variant_id ?? item.variant?.id ??
+          parseInt(String(item.variant?.href ?? '').match(/\/(\d+)\.json/)?.[1] ?? '0', 10) ?? 0;
+        console.log(`[resolver:stock-v2] item.variantId=${item.variantId} variant_id=${item.variant_id} variant.id=${item.variant?.id} → variantId=${variantId}`);
         return {
           topic: 'stock',
           data: {
             id: 0,
             quantityAvailable: item.quantityAvailable,
             quantityReserved: item.quantityReserved ?? 0,
-            variant: { id: item.variantId, href: '' },
-            office: item.office ? { id: item.office.id, name: '' } : undefined,
+            variant: { id: variantId, href: item.variant?.href ?? '' },
+            office: item.office ? { id: item.office.id, name: item.office.name ?? '' } : undefined,
           },
         };
       }
-      return { topic: 'stock', data: raw as BsaleStockRaw };
+      // v1 recurso individual: variant puede tener solo href sin id explícito
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const stock = raw as any;
+      const explicitId: number = stock.variant?.id ?? 0;
+      const hrefId: number = explicitId === 0
+        ? parseInt(String(stock.variant?.href ?? '').match(/\/(\d+)\.json/)?.[1] ?? '0', 10)
+        : 0;
+      const variantId = explicitId || hrefId;
+      console.log(`[resolver:stock-v1] stockId=${stock.id} variant.id=${explicitId} href=${stock.variant?.href} → variantId=${variantId}`);
+      return {
+        topic: 'stock',
+        data: { ...stock, variant: { id: variantId, href: stock.variant?.href ?? '' } } as BsaleStockRaw,
+      };
     }
     case 'variant': {
       const url = resourceUrl.includes('?')

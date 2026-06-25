@@ -10,7 +10,7 @@ beforeEach(() => vi.clearAllMocks());
 
 describe('resolveWebhookResource', () => {
   describe('topic=stock', () => {
-    it('llama al resourceUrl sin modificar y devuelve BsaleStockRaw', async () => {
+    it('v1 con variant.id explícito — lo usa directamente', async () => {
       const stockData = {
         id: 1,
         quantityAvailable: 5,
@@ -22,8 +22,43 @@ describe('resolveWebhookResource', () => {
 
       const result = await resolveWebhookResource(mockBsale, 'stock', '/v1/stocks/1.json');
 
-      expect(result).toEqual({ topic: 'stock', data: stockData });
+      expect(result.topic).toBe('stock');
+      expect((result.data as any)?.variant.id).toBe(9506);
       expect(mockBsale.get).toHaveBeenCalledWith('/v1/stocks/1.json');
+    });
+
+    it('v1 sin variant.id pero con variant.href — extrae ID del href', async () => {
+      vi.mocked(mockBsale.get).mockResolvedValueOnce({
+        id: 14488,
+        quantityAvailable: 3,
+        quantityReserved: 0,
+        variant: { href: '/v1/variants/9506.json' },  // sin id explícito
+      });
+
+      const result = await resolveWebhookResource(mockBsale, 'stock', '/v1/stocks/14488.json');
+
+      expect(result.topic).toBe('stock');
+      expect((result.data as any)?.variant.id).toBe(9506);
+    });
+
+    it('v2 collection con variantId — normaliza a variant.id', async () => {
+      vi.mocked(mockBsale.get).mockResolvedValueOnce({
+        count: 1,
+        data: [{ variantId: 9506, quantityAvailable: 5, quantityReserved: 0 }],
+      });
+
+      const result = await resolveWebhookResource(mockBsale, 'stock', '/v1/stocks/14488.json');
+
+      expect(result.topic).toBe('stock');
+      expect((result.data as any)?.variant.id).toBe(9506);
+    });
+
+    it('v2 collection vacía — devuelve data=null', async () => {
+      vi.mocked(mockBsale.get).mockResolvedValueOnce({ count: 0, data: [] });
+
+      const result = await resolveWebhookResource(mockBsale, 'stock', '/v1/stocks/14488.json');
+
+      expect(result).toEqual({ topic: 'stock', data: null });
     });
   });
 
