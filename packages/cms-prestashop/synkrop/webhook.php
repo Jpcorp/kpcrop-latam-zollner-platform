@@ -86,6 +86,30 @@ $syncEntity  = $isSurgical ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknow
 $syncStatus  = 'failed';
 $syncErrMsg  = null;
 
+// Garantiza que siempre quede un registro aunque el proceso sea terminado abruptamente
+$logWritten = false;
+register_shutdown_function(function () use (&$logWritten, &$syncResult, $syncEntity, $syncStatus, $jobId) {
+    if ($logWritten) return;
+    $error = error_get_last();
+    $msg   = $error ? ($error['message'] . ' in ' . $error['file'] . ':' . $error['line']) : 'Proceso terminado sin completar';
+    try {
+        Db::getInstance()->insert('synkrop_log', [
+            'id_shop'      => 1,
+            'sync_type'    => 'webhook',
+            'entity_type'  => pSQL($syncEntity),
+            'status'       => 'failed',
+            'records_ok'   => 0,
+            'records_fail' => 1,
+            'duration_ms'  => 0,
+            'error_details'=> pSQL(json_encode([['code' => 'FATAL', 'message' => $msg]])),
+            'job_id'       => $jobId ? pSQL($jobId) : null,
+        ]);
+    } catch (\Throwable $t) {
+        // Si el DB también falla, escribir al error_log del servidor
+        error_log('[Synkrop] shutdown fallback DB failed: ' . $t->getMessage() . ' | original: ' . $msg);
+    }
+});
+
 try {
     $decryptedToken = Synkrop::decryptToken($fullConfig['bsale_api_token']);
     $bsale   = new BsaleApiClient($decryptedToken);
@@ -113,11 +137,12 @@ try {
         'error_details'=> $syncResult->errors ? pSQL(json_encode($syncResult->errors)) : null,
         'job_id'       => $jobId ? pSQL($jobId) : null,
     ]);
+    $logWritten = true;
 
     if (!empty($syncResult->errors)) {
         $syncErrMsg = $syncResult->errors[0]['message'] ?? null;
     }
-} catch (Exception $e) {
+} catch (\Throwable $e) {
     $syncErrMsg = $e->getMessage();
     Db::getInstance()->insert('synkrop_log', [
         'id_shop'      => 1,
@@ -127,9 +152,10 @@ try {
         'records_ok'   => 0,
         'records_fail' => 1,
         'duration_ms'  => 0,
-        'error_details'=> pSQL(json_encode([['code' => 'EXCEPTION', 'message' => $e->getMessage()]])),
+        'error_details'=> pSQL(json_encode([['code' => get_class($e), 'message' => $e->getMessage()]])),
         'job_id'       => $jobId ? pSQL($jobId) : null,
     ]);
+    $logWritten = true;
 }
 
 // ── Reportar resultado real a bot-miki (cierra el loop en sync_events) ────────
