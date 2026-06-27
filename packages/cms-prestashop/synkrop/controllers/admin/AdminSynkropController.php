@@ -38,6 +38,17 @@ class AdminSynkropController extends ModuleAdminController
 
         $isConfigured = !empty($config['bsale_api_token']) && !empty($config['daemon_api_key']);
 
+        $shopTz = new DateTimeZone(Configuration::get('PS_TIMEZONE') ?: 'UTC');
+        $utcTz  = new DateTimeZone('UTC');
+        foreach ($logs as &$log) {
+            $dt = DateTime::createFromFormat('Y-m-d H:i:s', $log['created_at'], $utcTz);
+            if ($dt) {
+                $dt->setTimezone($shopTz);
+                $log['created_at'] = $dt->format('d/m/Y H:i:s');
+            }
+        }
+        unset($log);
+
         $this->context->smarty->assign([
             'is_configured' => $isConfigured,
             'sync_logs'     => $logs,
