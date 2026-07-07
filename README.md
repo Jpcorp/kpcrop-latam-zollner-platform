@@ -37,7 +37,7 @@ docker compose up postgres redis -d
 
 # 3. Ejecutar migraciones de bot-miki
 docker exec -i $(docker compose ps -q postgres) psql -U botmiki botmiki \
-  < packages/bot-miki/src/infrastructure/sql/001_initial_schema.sql
+  < packages/bot-miki/migrations/001_initial_schema.sql
 
 # 4. Arrancar bot-miki en modo desarrollo (hot-reload)
 pnpm --filter bot-miki dev
@@ -96,7 +96,7 @@ PORT=3000
 
 | Componente | Stack |
 |---|---|
-| bot-miki | Node.js 24, TypeScript 5, Fastify 5, BullMQ, Kysely, PostgreSQL 16, Redis 7 |
+| bot-miki | Node.js 22, TypeScript 5, Fastify 5, BullMQ, Kysely, PostgreSQL 16, Redis 7 |
 | cms-prestashop | PHP 7.4+, PrestaShop 1.7+ |
 | shared | TypeScript 5, ESM (target ES2022, module NodeNext) |
 | Infraestructura | Docker, Railway (prod), Cloudflare (DNS + cache) |
