@@ -26,6 +26,8 @@ vi.mock('../../infrastructure/database.js', () => {
     executeTakeFirst: mockExecuteTakeFirst,
   };
   chain['selectAll'] = () => chain;
+  chain['innerJoin'] = () => chain; // #105: webhooks.ts hace join con licenses
+  chain['select'] = () => chain;    // #105: select explicito de columnas tras el join
   chain['where'] = () => chain;
   return { db: { selectFrom: () => chain, insertInto: () => chain, values: () => chain, execute: vi.fn().mockResolvedValue([]) } };
 });
