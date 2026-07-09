@@ -4,9 +4,10 @@ import type { Queue } from 'bullmq';
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
-const ADMIN_KEY = 'test_admin_key_minimum_32_characters_long';
-
-const { mockExecuteTakeFirst } = vi.hoisted(() => ({
+// ADMIN_KEY va dentro de vi.hoisted: el factory de vi.mock se eleva por encima de
+// las constantes de modulo, asi que referenciar una const normal falla al inicializar.
+const { ADMIN_KEY, mockExecuteTakeFirst } = vi.hoisted(() => ({
+  ADMIN_KEY: 'test_admin_key_minimum_32_characters_long',
   mockExecuteTakeFirst: vi.fn(),
 }));
 
