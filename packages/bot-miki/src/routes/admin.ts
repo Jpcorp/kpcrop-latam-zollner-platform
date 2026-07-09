@@ -9,12 +9,21 @@ function generateApiKey(): string {
   return 'kp_' + crypto.randomBytes(24).toString('hex');
 }
 
+// #92: comparacion en tiempo constante para evitar timing attacks sobre ADMIN_KEY.
+// Se comparan los digests SHA-256 (siempre 32 bytes) para no filtrar la longitud ni
+// que timingSafeEqual lance por buffers de distinto tamaño.
+function adminKeyMatches(provided: string | string[] | undefined): boolean {
+  if (typeof provided !== 'string' || provided.length === 0) return false;
+  const a = crypto.createHash('sha256').update(provided).digest();
+  const b = crypto.createHash('sha256').update(config.ADMIN_KEY).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 export async function adminRoute(app: FastifyInstance, opts: { queue: Queue<SyncJobData> }) {
   const { queue } = opts;
   // Middleware: verify X-Admin-Key on all /admin routes
   app.addHook('onRequest', async (request, reply) => {
-    const key = request.headers['x-admin-key'];
-    if (key !== config.ADMIN_KEY) {
+    if (!adminKeyMatches(request.headers['x-admin-key'])) {
       return reply.code(403).send({ code: 'FORBIDDEN', message: 'Admin key invalida o faltante' });
     }
   });
