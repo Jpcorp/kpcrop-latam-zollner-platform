@@ -7,7 +7,9 @@ const schema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
   JWT_SECRET: z.string().min(32),
-  ADMIN_KEY: z.string().min(16).default('dev_admin_key_change_in_prod_0001'),
+  // #92: obligatorio y sin default (un default publico era bypass de auth admin).
+  // Debe estar seteado en el entorno (Railway) antes de arrancar, o el proceso aborta.
+  ADMIN_KEY: z.string().min(32),
   BSALE_RATE_LIMIT_RPS: z.coerce.number().default(10),
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
