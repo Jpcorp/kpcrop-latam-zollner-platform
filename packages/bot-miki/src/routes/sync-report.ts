@@ -52,7 +52,10 @@ export async function syncReportRoute(app: FastifyInstance) {
         duration_ms:     body.durationMs ?? null,
         error_message:   body.errorMessage ?? null,
         idempotency_key: body.idempotencyKey ?? null,
-      }).execute();
+      })
+        // #95: un reporte duplicado (mismo idempotency_key) es no-op, no revienta el endpoint
+        .onConflict((oc) => oc.column('idempotency_key').doNothing())
+        .execute();
 
       return reply.code(204).send();
     },

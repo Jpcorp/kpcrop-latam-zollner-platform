@@ -1,8 +1,8 @@
 <?php
 /**
  * Punto de entrada para webhooks de bot-miki → Synkrop.
- * Responde 200 inmediatamente y procesa el sync en background
- * para no bloquear el timeout del caller (30s en bot-miki).
+ * Ejecuta el sync de forma síncrona y responde con el resultado.
+ * (fastcgi_finish_request no está disponible en hosting compartido cPanel)
  */
 
 if (!defined('_PS_VERSION_')) {
@@ -50,27 +50,7 @@ if (!$isSurgical) {
     }
 }
 
-// ── Responder 200 inmediatamente para no bloquear el timeout de bot-miki ──────
-
-$responseBody = json_encode(['success' => true, 'status' => 'accepted', 'message' => 'Sync iniciado en background']);
-
-// Content-Length es crítico: sin él fetch/curl espera cierre de conexión TCP
-header('Content-Length: ' . strlen($responseBody));
-header('Connection: close');
-http_response_code(200);
-echo $responseBody;
-
-// Cerrar la conexión HTTP con el cliente y continuar el proceso en background
-if (function_exists('fastcgi_finish_request')) {
-    fastcgi_finish_request();
-} else {
-    ob_end_flush();
-    flush();
-}
-
-// Ahora el cliente ya recibió el 200. Procesamos en background.
-ignore_user_abort(true);
-set_time_limit(300);
+set_time_limit(25);
 ini_set('memory_limit', '256M');
 
 // ── Ejecutar sync ─────────────────────────────────────────────────────────────
@@ -134,7 +114,7 @@ try {
         'records_ok'   => $syncResult->updated,
         'records_fail' => $syncResult->failed,
         'duration_ms'  => $syncResult->durationMs,
-        'error_details'=> $syncResult->errors ? pSQL(json_encode($syncResult->errors)) : null,
+        'error_details'=> $syncResult->errors ? pSQL(json_encode($syncResult->errors)) : pSQL('[]'),
         'job_id'       => $jobId ? pSQL($jobId) : null,
     ]);
     $logWritten = true;
@@ -189,3 +169,12 @@ if ($jobId) {
         ]])
     );
 }
+
+// ── Responder al caller (bot-miki) con el resultado del sync ──────────────────
+
+http_response_code(200);
+echo json_encode([
+    'success' => true,
+    'status'  => $syncStatus,
+    'updated' => $syncResult ? $syncResult->updated : 0,
+]);

@@ -13,13 +13,21 @@ import type { SyncJobData } from './workers/sync-worker.js';
 async function applyMigrations(): Promise<void> {
   const pool = new pg.Pool({ connectionString: config.DATABASE_URL });
   const dir = join(dirname(fileURLToPath(import.meta.url)), '..', 'migrations');
-  const sql = readFileSync(join(dir, '001_initial_schema.sql'), 'utf8');
   try {
-    await pool.query(sql);
-    console.log('[migrations] schema aplicado');
-  } catch (err: unknown) {
-    if ((err as { code?: string }).code !== '42P07') throw err;
-    console.log('[migrations] schema ya existia');
+    // 001: schema base (idempotente por tolerancia a 42P07 si las tablas ya existen)
+    try {
+      await pool.query(readFileSync(join(dir, '001_initial_schema.sql'), 'utf8'));
+      console.log('[migrations] 001 schema aplicado');
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code !== '42P07') throw err;
+      console.log('[migrations] 001 schema ya existia');
+    }
+    // Migraciones incrementales idempotentes (usan IF NOT EXISTS → seguras de re-ejecutar).
+    // 002_seed_dev.sql NO se aplica aquí: es data de desarrollo, no de producción.
+    for (const file of ['003_add_indexes.sql']) {
+      await pool.query(readFileSync(join(dir, file), 'utf8'));
+      console.log(`[migrations] ${file} aplicado`);
+    }
   } finally {
     await pool.end();
   }

@@ -195,7 +195,17 @@
                 <td class="text-muted" style="padding-left:12px">
                   {l s='Duracion' mod='synkrop'}
                 </td>
-                <td>{($last.duration_ms / 1000)|string_format:"%.1f"}s</td>
+                <td>
+                  {if $last.duration_ms > 0}
+                    {if $last.duration_ms < 1000}
+                      {$last.duration_ms}ms
+                    {else}
+                      {($last.duration_ms / 1000)|string_format:"%.1f"}s
+                    {/if}
+                  {else}
+                    <span class="text-muted">—</span>
+                  {/if}
+                </td>
               </tr>
             </table>
           {else}
@@ -260,7 +270,17 @@
                   <td class="text-right{if $log.records_fail > 0} text-danger{/if}">
                     {$log.records_fail}
                   </td>
-                  <td class="text-right">{($log.duration_ms / 1000)|string_format:"%.1f"}s</td>
+                  <td class="text-right">
+                    {if $log.duration_ms > 0}
+                      {if $log.duration_ms < 1000}
+                        {$log.duration_ms}ms
+                      {else}
+                        {($log.duration_ms / 1000)|string_format:"%.1f"}s
+                      {/if}
+                    {else}
+                      <span class="text-muted">—</span>
+                    {/if}
+                  </td>
                   <td>
                     {if $log.error_details}
                       <button class="btn btn-xs btn-default bs-show-errors"
