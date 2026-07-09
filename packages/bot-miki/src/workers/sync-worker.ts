@@ -40,7 +40,11 @@ export function startSyncWorker() {
       records_failed:  0,
       error_message:   error.message,
       idempotency_key: job.id ?? null,
-    }).execute();
+    })
+      // #95: si el CMS ya reporto este job (mismo idempotency_key), el dead-letter es no-op
+      // en vez de lanzar 23505 dentro del handler 'failed' (rechazo no manejado)
+      .onConflict((oc) => oc.column('idempotency_key').doNothing())
+      .execute();
   });
 
   worker.on('error', err => console.error('[sync-worker]', err));
