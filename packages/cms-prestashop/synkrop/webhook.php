@@ -65,6 +65,9 @@ $syncResult  = null;
 $syncEntity  = $isSurgical ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
 $syncStatus  = 'failed';
 $syncErrMsg  = null;
+// #93: distingue fallo transitorio (excepción → bot-miki reintenta) de permanente
+// (status=failed sin excepción, p.ej. variante no mapeada → bot-miki descarta).
+$exceptionOccurred = false;
 
 // Garantiza que siempre quede un registro aunque el proceso sea terminado abruptamente
 $logWritten = false;
@@ -124,6 +127,7 @@ try {
     }
 } catch (\Throwable $e) {
     $syncErrMsg = $e->getMessage();
+    $exceptionOccurred = true; // #93: transitorio → señalar a bot-miki que reintente
     Db::getInstance()->insert('synkrop_log', [
         'id_shop'      => 1,
         'sync_type'    => 'webhook',
@@ -170,11 +174,38 @@ if ($jobId) {
     );
 }
 
-// ── Responder al caller (bot-miki) con el resultado del sync ──────────────────
+// ── Responder al caller (bot-miki) con el resultado REAL del sync ─────────────
+// #93: antes respondía siempre 200 + success:true, así que bot-miki nunca reintentaba
+// ni registraba los fallos. Ahora el código HTTP y el flag `retryable` reflejan el estado:
+//   - success / partial          → 200 (hubo cambios; los fallos parciales quedan logueados)
+//   - failed + excepción         → 503 retryable=true  (transitorio → bot-miki reintenta)
+//   - failed sin excepción       → 422 retryable=false (permanente → bot-miki descarta)
 
-http_response_code(200);
-echo json_encode([
-    'success' => true,
-    'status'  => $syncStatus,
-    'updated' => $syncResult ? $syncResult->updated : 0,
-]);
+$updated = $syncResult ? $syncResult->updated : 0;
+
+if ($syncStatus === 'success' || $syncStatus === 'partial') {
+    http_response_code(200);
+    echo json_encode([
+        'success' => true,
+        'status'  => $syncStatus,
+        'updated' => $updated,
+    ]);
+} elseif ($exceptionOccurred) {
+    http_response_code(503);
+    echo json_encode([
+        'success'   => false,
+        'status'    => 'failed',
+        'retryable' => true,
+        'updated'   => $updated,
+        'message'   => $syncErrMsg,
+    ]);
+} else {
+    http_response_code(422);
+    echo json_encode([
+        'success'   => false,
+        'status'    => 'failed',
+        'retryable' => false,
+        'updated'   => $updated,
+        'message'   => $syncErrMsg,
+    ]);
+}

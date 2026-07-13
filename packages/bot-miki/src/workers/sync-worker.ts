@@ -5,6 +5,18 @@ import { db } from '../infrastructure/database.js';
 import { BsaleHttpClient, BsaleApiError } from '../infrastructure/bsale-http-client.js';
 import { resolveWebhookResource } from '../adapters/bsale-webhook-resolver.js';
 
+/**
+ * #93: fallo NO reintentable (permanente). El sync no puede tener éxito por más que se
+ * reintente el mismo payload — p.ej. variante no mapeada en el CMS (requiere product-sync)
+ * o payload inválido. `processJob` la trata con `job.discard()` en vez de reintentar.
+ */
+export class PermanentSyncError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PermanentSyncError';
+  }
+}
+
 export interface SyncJobData {
   storeId: string;
   tenantId: string;
@@ -66,7 +78,9 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
   }
 
   const bsale = new BsaleHttpClient(store.bsale_access_token);
-  const start  = Date.now();
+
+  // #93: reflejar el estado REAL del sync en el store (antes marcaba 'success' siempre).
+  let syncStatus: 'success' | 'failed' = 'success';
 
   try {
     if (job.data.syncType === 'webhook' && job.data.resourceUrl) {
@@ -75,18 +89,20 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
       await processPollingCycle(job.data, bsale, store.id);
     }
   } catch (err) {
-    if (err instanceof BsaleApiError) {
-      if (err.isClientError) {
-        // Error 4xx: datos incorrectos, no es temporal — no reintentar
-        await job.discard();
-        return;
-      }
+    syncStatus = 'failed';
+    // Fallos permanentes (no reintentar): 4xx de Bsale o rechazo permanente del CMS.
+    const isPermanent =
+      (err instanceof BsaleApiError && err.isClientError) ||
+      err instanceof PermanentSyncError;
+    if (isPermanent) {
+      await job.discard();
+      return;
     }
-    throw err; // 5xx o timeout → BullMQ reintenta con backoff
+    throw err; // 5xx, timeout o error transitorio del CMS → BullMQ reintenta con backoff
   } finally {
     await db
       .updateTable('tenant_stores')
-      .set({ last_sync_at: new Date(), last_sync_status: 'success' })
+      .set({ last_sync_at: new Date(), last_sync_status: syncStatus })
       .where('id', '=', job.data.storeId)
       .execute();
   }
@@ -148,12 +164,23 @@ export async function processWebhookEvent(
   });
 
   if (!response.ok) {
+    // #93: 4xx del CMS = rechazo permanente (payload inválido) → no reintentar.
+    // 5xx = transitorio → BullMQ reintenta.
+    if (response.status >= 400 && response.status < 500) {
+      throw new PermanentSyncError(`Synkrop rechazó el payload (${response.status}) en ${ajaxUrl}`);
+    }
     throw new Error(`Synkrop webhook endpoint respondió ${response.status} en ${ajaxUrl}`);
   }
 
-  const result = await response.json() as { success: boolean; updated?: number; message?: string };
+  const result = await response.json() as {
+    success: boolean; updated?: number; message?: string; retryable?: boolean; status?: string;
+  };
 
   if (!result.success) {
+    // #93: el CMS marca retryable=false para fallos permanentes (p.ej. variante no mapeada).
+    if (result.retryable === false) {
+      throw new PermanentSyncError(`Synkrop sync falló (permanente): ${result.message ?? 'error desconocido'}`);
+    }
     throw new Error(`Synkrop sync falló: ${result.message ?? 'error desconocido'}`);
   }
 

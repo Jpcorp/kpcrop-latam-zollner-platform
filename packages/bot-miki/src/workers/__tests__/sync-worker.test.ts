@@ -59,7 +59,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 // ── Import bajo test (después de los mocks) ───────────────────────────────────
 
-const { processWebhookEvent } = await import('../sync-worker.js');
+const { processWebhookEvent, PermanentSyncError } = await import('../sync-worker.js');
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -245,6 +245,38 @@ describe('processWebhookEvent', () => {
 
       await expect(processWebhookEvent(baseJobData, mockBsale))
         .rejects.toThrow('Secret inválido');
+    });
+
+    it('#93: 5xx del CMS lanza error genérico (transitorio → reintentar)', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: {} });
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 503 });
+
+      await expect(processWebhookEvent(baseJobData, mockBsale))
+        .rejects.not.toBeInstanceOf(PermanentSyncError);
+    });
+
+    it('#93: 4xx del CMS lanza PermanentSyncError (permanente → descartar)', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: {} });
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 422 });
+
+      await expect(processWebhookEvent(baseJobData, mockBsale))
+        .rejects.toBeInstanceOf(PermanentSyncError);
+    });
+
+    it('#93: success=false con retryable=false lanza PermanentSyncError', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: {} });
+      mockFetch.mockResolvedValueOnce({
+        ok:   true,
+        json: () => Promise.resolve({
+          success: false, retryable: false, message: 'Variante no mapeada',
+        }),
+      });
+
+      await expect(processWebhookEvent(baseJobData, mockBsale))
+        .rejects.toBeInstanceOf(PermanentSyncError);
     });
 
     it('no llama a fetch si resourceUrl está vacío', async () => {
