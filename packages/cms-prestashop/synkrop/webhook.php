@@ -86,6 +86,9 @@ register_shutdown_function(function () use (&$logWritten, &$syncResult, $syncEnt
             'duration_ms'  => 0,
             'error_details'=> pSQL(json_encode([['code' => 'FATAL', 'message' => $msg]])),
             'job_id'       => $jobId ? pSQL($jobId) : null,
+            // #100: UTC explicito. El servidor MySQL corre en UTC-5, no en UTC, y el panel
+            // convierte created_at asumiendo UTC -> guardar con gmdate lo hace tz-independiente.
+            'created_at'   => gmdate('Y-m-d H:i:s'),
         ]);
     } catch (\Throwable $t) {
         // Si el DB también falla, escribir al error_log del servidor
@@ -119,6 +122,7 @@ try {
         'duration_ms'  => $syncResult->durationMs,
         'error_details'=> $syncResult->errors ? pSQL(json_encode($syncResult->errors)) : pSQL('[]'),
         'job_id'       => $jobId ? pSQL($jobId) : null,
+        'created_at'   => gmdate('Y-m-d H:i:s'), // #100: UTC explicito (servidor en UTC-5)
     ]);
     $logWritten = true;
 
@@ -138,6 +142,7 @@ try {
         'duration_ms'  => 0,
         'error_details'=> pSQL(json_encode([['code' => get_class($e), 'message' => $e->getMessage()]])),
         'job_id'       => $jobId ? pSQL($jobId) : null,
+        'created_at'   => gmdate('Y-m-d H:i:s'), // #100: UTC explicito (servidor en UTC-5)
     ]);
     $logWritten = true;
 }

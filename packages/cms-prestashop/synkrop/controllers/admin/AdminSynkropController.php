@@ -249,7 +249,11 @@ class AdminSynkropController extends ModuleAdminController
             'records_ok'   => $result->updated,
             'records_fail' => $result->failed,
             'duration_ms'  => $result->durationMs,
-            'error_details'=> $result->errors ? json_encode($result->errors) : null,
+            // La columna error_details es JSON (MariaDB: CHECK json_valid): NUNCA null/''.
+            // Db::insert() convierte null de PHP en '' y MariaDB lo rechaza -> el INSERT
+            // fallaba en silencio y el sync manual jamas quedaba registrado.
+            'error_details'=> pSQL(json_encode($result->errors ?: [])),
+            'created_at'   => gmdate('Y-m-d H:i:s'), // #100: UTC explicito (servidor en UTC-5)
         ]);
     }
 }

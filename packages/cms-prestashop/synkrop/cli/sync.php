@@ -154,7 +154,9 @@ foreach ($entities as $ent) {
             'records_ok'    => $result->updated,
             'records_fail'  => $result->failed,
             'duration_ms'   => $result->durationMs,
-            'error_details' => $result->errors ? json_encode($result->errors) : null,
+            // JSON (MariaDB CHECK json_valid): nunca null/'' o el INSERT falla en silencio.
+            'error_details' => pSQL(json_encode($result->errors ?: [])),
+            'created_at'    => gmdate('Y-m-d H:i:s'), // #100: UTC explicito (servidor en UTC-5)
         ]);
 
         if ($result->status() === 'failed') {
