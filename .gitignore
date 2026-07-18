@@ -37,3 +37,5 @@ bsalesync-v*.zip
 # Secrets (nunca al repo)
 docs/deployment/secrets.md
 ssh/
+sources_of_information/
+imgs/
