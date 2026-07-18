@@ -99,10 +99,22 @@ class OrderDocumentService
                 throw new RuntimeException('Respuesta de Bsale sin id de documento: ' . json_encode($resp));
             }
 
+            // Hash desde los detalles del documento YA creado en Bsale — la misma
+            // fuente que lee checkEmissions(). Con los codes del payload el hash
+            // divergía: Bsale auto-crea variante (con code propio) para la línea
+            // de envío enviada sin code, y el doc emitido la hereda.
             $skus = [];
-            foreach ($payload['details'] as $detail) {
-                if (isset($detail['code'])) {
-                    $skus[] = $detail['code'];
+            try {
+                $created = $this->bsale->get('/v1/documents/' . (int)$resp['id'] . '/details.json', ['limit' => 50]);
+                foreach ($created['items'] ?? [] as $item) {
+                    $skus[] = (string)($item['variant']['code'] ?? '');
+                }
+                $skus = array_filter($skus);
+            } catch (Exception $e) {
+                foreach ($payload['details'] as $detail) {
+                    if (isset($detail['code'])) {
+                        $skus[] = $detail['code'];
+                    }
                 }
             }
 
@@ -424,7 +436,9 @@ class OrderDocumentService
 
             case self::STATUS_GENERATED:
                 try {
-                    $this->bsale->delete('/v1/documents/' . (int)$row['bsale_doc_id'] . '.json');
+                    // Bsale exige officeId (camelCase) en el DELETE — sin él responde 400
+                    $officeId = (int)($this->loadConfig()['bsale_office_id'] ?? 0);
+                    $this->bsale->delete('/v1/documents/' . (int)$row['bsale_doc_id'] . '.json?officeId=' . $officeId);
                     $this->updateRow($idOrder, ['status' => self::STATUS_CANCELLED]);
                     return self::STATUS_CANCELLED;
                 } catch (Exception $e) {
