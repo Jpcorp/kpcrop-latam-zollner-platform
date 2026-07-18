@@ -256,9 +256,11 @@ automático sobre la misma lógica.
 Email al comprador con link del documento (config), packs, notas de crédito (solo aviso,
 emisión humana), multi-moneda/multi-tienda, dashboard agencia.
 
-### Decisiones abiertas al implementar
+### Decisiones cerradas (17-jul-2026, usuario)
 
-- Confirmación topic `document` (monitor en curso / correo a ayuda@bsale.app).
-- Estado PS de destino al cerrar (¿"Preparación en curso" o estado custom "Documentado"?).
-- Qué hacer con pedidos cancelados con nota `generated` (¿anular nota vía API? verificar
-  endpoint DELETE/anulación en sandbox).
+- Estado PS de destino al cerrar: **estado custom "Documentado en Bsale"** (creado en el
+  install del módulo, id guardado en config `SYNKROP_OS_DOCUMENTED`).
+- Pedidos cancelados con nota `generated`: **doble método** — intentar anular vía API primero;
+  si la API no lo permite/falla, la fila pasa a `review` para decisión humana en el panel
+  (continuidad operacional siempre).
+- Pendiente solo: confirmación topic `document` (monitor en curso / correo a ayuda@bsale.app).
