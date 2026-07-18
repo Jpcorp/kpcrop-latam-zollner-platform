@@ -22,7 +22,7 @@ class Synkrop extends Module
     {
         $this->name          = 'synkrop';
         $this->tab           = 'administration';
-        $this->version       = '1.0.0';
+        $this->version       = '1.1.0';
         $this->author        = 'kpcrop-latam';
         $this->need_instance = 0;
         $this->bootstrap     = true;
@@ -43,6 +43,8 @@ class Synkrop extends Module
             && $this->installTab()
             && $this->installDb()
             && $this->registerHook('actionOrderStatusPostUpdate')
+            && $this->registerHook('displayPaymentTop')
+            && $this->registerHook('actionFrontControllerSetMedia')
             && $this->installOrderState();
     }
 
@@ -178,6 +180,54 @@ class Synkrop extends Module
         }
     }
 
+    // ─── Formulario boleta/factura en el checkout ─────────────────────────────
+
+    /**
+     * Muestra el selector boleta/factura sobre las opciones de pago. Si el
+     * comprador pide factura, sus datos tributarios viajan en la nota de venta
+     * y el usuario Bsale decide el documento a emitir (nunca el sistema).
+     */
+    public function hookDisplayPaymentTop($params): string
+    {
+        $config = Db::getInstance()->getRow(
+            'SELECT sync_orders FROM `' . _DB_PREFIX_ . 'synkrop_config`
+             WHERE id_shop = ' . (int)$this->context->shop->id
+        );
+        if (!$config || !(int)$config['sync_orders']) {
+            return '';
+        }
+
+        $idCart = (int)($this->context->cart->id ?? 0);
+        if (!$idCart) {
+            return '';
+        }
+
+        $existing = Db::getInstance()->getRow(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_invoice_request`
+             WHERE id_cart = ' . $idCart
+        );
+
+        $this->context->smarty->assign([
+            'synkrop_invoice_request' => $existing ?: null,
+            'synkrop_ajax_url'        => $this->context->link->getModuleLink($this->name, 'invoicerequest'),
+            'synkrop_token'           => Tools::getToken(false),
+        ]);
+
+        return $this->display(__FILE__, 'views/templates/hook/invoice_request.tpl');
+    }
+
+    public function hookActionFrontControllerSetMedia($params): void
+    {
+        if (($this->context->controller->php_self ?? '') !== 'order') {
+            return;
+        }
+        $this->context->controller->registerJavascript(
+            'synkrop-invoice-request',
+            'modules/' . $this->name . '/views/js/invoice_request.js',
+            ['position' => 'bottom', 'priority' => 150]
+        );
+    }
+
     private function buildOrderDocumentService(array $config): OrderDocumentService
     {
         $token = self::decryptToken((string)$config['bsale_api_token']);
@@ -231,6 +281,7 @@ class Synkrop extends Module
                 'sync_orders'          => $syncOrders,
                 'order_trigger_states' => pSQL($triggerStates),
                 'order_vat_rate'       => $vatRate,
+                'shipping_sku'         => pSQL(trim((string)Tools::getValue('SYNKROP_SHIPPING_SKU', ''))),
             ],
             'id_shop = ' . (int)$this->context->shop->id
         );
@@ -294,6 +345,12 @@ class Synkrop extends Module
                         'name'  => 'SYNKROP_ORDER_VAT_RATE',
                         'desc'  => $this->l('Usada para prorratear descuentos. Default: 19'),
                     ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('SKU de despacho en Bsale'),
+                        'name'  => 'SYNKROP_SHIPPING_SKU',
+                        'desc'  => $this->l('SKU del servicio de despacho en tu catalogo Bsale (crealo una vez, sin control de stock). En blanco: Bsale creara una variante nueva por cada documento con envio. Util si el despacho es propio; si lo externalizas, define aqui el SKU que uses para cobrarlo.'),
+                    ],
                 ],
                 'submit' => ['title' => $this->l('Guardar'), 'class' => 'btn btn-default pull-right'],
             ],
@@ -320,6 +377,7 @@ class Synkrop extends Module
             'SYNKROP_SYNC_ORDERS'          => (int)($config['sync_orders'] ?? 0),
             'SYNKROP_ORDER_TRIGGER_STATES' => $config['order_trigger_states'] ?? '2',
             'SYNKROP_ORDER_VAT_RATE'       => $config['order_vat_rate'] ?? '19.00',
+            'SYNKROP_SHIPPING_SKU'         => $config['shipping_sku'] ?? '',
         ];
 
         return $helper->generateForm([$fields]);

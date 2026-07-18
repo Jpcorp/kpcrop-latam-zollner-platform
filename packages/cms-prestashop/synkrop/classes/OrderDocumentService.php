@@ -200,14 +200,22 @@ class OrderDocumentService
             unset($detail);
         }
 
-        // Envío como línea de servicio (sin code → no toca stock)
+        // Envío: con SKU configurado reutiliza esa variante de servicio en Bsale
+        // (despacho propio o externalizado — lo decide el cliente en la config);
+        // sin SKU, Bsale auto-crea una variante nueva por cada documento
         $shippingNet = (float)$order->total_shipping_tax_excl;
         if ($shippingNet > 0) {
-            $details[] = [
-                'comment'      => 'Costo de despacho',
+            $line = [
                 'quantity'     => 1,
                 'netUnitValue' => round($shippingNet, 4),
             ];
+            $shippingSku = trim((string)($config['shipping_sku'] ?? ''));
+            if ($shippingSku !== '') {
+                $line['code'] = $shippingSku;
+            } else {
+                $line['comment'] = 'Costo de despacho';
+            }
+            $details[] = $line;
         }
 
         $now = time();
@@ -502,7 +510,7 @@ class OrderDocumentService
      * Valida (módulo 11) y formatea un RUT chileno como XX.XXX.XXX-D.
      * @return string|null null si el RUT es inválido
      */
-    public function formatRut(string $rut)
+    public static function formatRut(string $rut)
     {
         $clean = preg_replace('/[^0-9kK]/', '', $rut);
         if (strlen($clean) < 8 || strlen($clean) > 9) {
