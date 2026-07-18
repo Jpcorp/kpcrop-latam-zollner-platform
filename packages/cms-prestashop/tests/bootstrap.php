@@ -173,3 +173,4 @@ class Configuration
 require_once __DIR__ . '/../synkrop/classes/BsaleApiClient.php';
 require_once __DIR__ . '/../synkrop/classes/LicenseClient.php';
 require_once __DIR__ . '/../synkrop/classes/SynkropService.php';
+require_once __DIR__ . '/../synkrop/classes/OrderDocumentService.php';
