@@ -46,6 +46,11 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
       // Solo procesar topics relevantes para sync CMS
       const relevantTopics = ['product', 'variant', 'stock', 'price'];
       if (!relevantTopics.includes(payload.topic)) {
+        // Log para dimensionar topics no procesados (ej: document, para el flujo de ventas PS→Bsale)
+        request.log.info(
+          { topic: payload.topic, action: payload.action, cpnId: payload.cpnId, resourceId: payload.resourceId },
+          'webhook con topic ignorado'
+        );
         return reply.code(200).send(); // Aceptar pero ignorar
       }
 
