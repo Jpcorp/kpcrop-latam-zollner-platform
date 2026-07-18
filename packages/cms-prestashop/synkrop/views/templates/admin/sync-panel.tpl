@@ -305,6 +305,152 @@
     </div>
   </div>
 
+  {* ── VENTAS: PEDIDOS → DOCUMENTOS BSALE ─────────────────────────────── *}
+
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <i class="icon-shopping-cart"></i>&nbsp;{l s='Ventas — documentos en Bsale' mod='synkrop'}
+          {if $orders_enabled && $order_counts}
+            {if isset($order_counts.pending)}
+              <span class="label label-default" style="margin-left:6px">{$order_counts.pending} {l s='pendientes' mod='synkrop'}</span>
+            {/if}
+            {if isset($order_counts.generated)}
+              <span class="label label-info">{$order_counts.generated} {l s='generadas' mod='synkrop'}</span>
+            {/if}
+            {if isset($order_counts.closed)}
+              <span class="label label-success">{$order_counts.closed} {l s='cerradas' mod='synkrop'}</span>
+            {/if}
+            {if isset($order_counts.error)}
+              <span class="label label-danger">{$order_counts.error} {l s='con error' mod='synkrop'}</span>
+            {/if}
+            {if isset($order_counts.review)}
+              <span class="label label-warning">{$order_counts.review} {l s='por revisar' mod='synkrop'}</span>
+            {/if}
+          {/if}
+        </div>
+
+        {if !$orders_enabled}
+        <div class="panel-body">
+          <p class="text-muted" style="margin:0">
+            <i class="icon-info-sign"></i>&nbsp;
+            {l s='El flujo de ventas esta desactivado. Cada pedido pagado puede generar automaticamente su nota de venta en Bsale (la boleta o factura la emite siempre un usuario en Bsale).' mod='synkrop'}
+            <a href="{$config_url|escape:'html'}">{l s='Activar en la configuracion del modulo' mod='synkrop'}</a>
+          </p>
+        </div>
+        {else}
+        <div class="panel-body">
+          <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-primary" id="bs-orders-generate-all" type="button"
+                    title="{l s='Crea la nota de venta en Bsale para todos los pedidos pendientes' mod='synkrop'}">
+              <i class="icon-file-text"></i>&nbsp;{l s='Generar pendientes' mod='synkrop'}
+            </button>
+            <button class="btn btn-default" id="bs-orders-check-emissions" type="button"
+                    title="{l s='Busca en Bsale que notas de venta ya fueron boleteadas/facturadas y cierra los pedidos' mod='synkrop'}">
+              <i class="icon-refresh"></i>&nbsp;{l s='Verificar emisiones' mod='synkrop'}
+            </button>
+            <span id="bs-orders-status" class="help-block" style="margin:0"></span>
+          </div>
+
+          {if $order_queue}
+          <div style="overflow-x:auto">
+            <table class="table table-hover table-condensed" style="margin-bottom:0">
+              <thead>
+                <tr>
+                  <th>{l s='Pedido' mod='synkrop'}</th>
+                  <th>{l s='Fecha' mod='synkrop'}</th>
+                  <th>{l s='Estado' mod='synkrop'}</th>
+                  <th>{l s='Nota de venta' mod='synkrop'}</th>
+                  <th>{l s='Documento emitido' mod='synkrop'}</th>
+                  <th class="text-right">{l s='Accion' mod='synkrop'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {foreach from=$order_queue item=row}
+                <tr>
+                  <td>
+                    <a href="{$row.order_url|escape:'html'}" target="_blank" rel="noopener">
+                      {if $row.order_reference}{$row.order_reference|escape:'html'}{else}#{$row.id_order}{/if}
+                    </a>
+                  </td>
+                  <td><small>{$row.created_at|escape:'html'}</small></td>
+                  <td>
+                    {if $row.status == 'pending'}
+                      <span class="label label-default">{l s='Pendiente' mod='synkrop'}</span>
+                    {elseif $row.status == 'generated'}
+                      <span class="label label-info">{l s='Generada' mod='synkrop'}</span>
+                    {elseif $row.status == 'emitted'}
+                      <span class="label label-primary">{l s='Emitida' mod='synkrop'}</span>
+                    {elseif $row.status == 'closed'}
+                      <span class="label label-success">{l s='Cerrada' mod='synkrop'}</span>
+                    {elseif $row.status == 'error'}
+                      <span class="label label-danger" {if $row.error_message}title="{$row.error_message|escape:'html'}"{/if}>
+                        {l s='Error' mod='synkrop'}
+                      </span>
+                    {elseif $row.status == 'review'}
+                      <span class="label label-warning" {if $row.error_message}title="{$row.error_message|escape:'html'}"{/if}>
+                        {l s='Revisar' mod='synkrop'}
+                      </span>
+                    {else}
+                      <span class="label label-default">{$row.status|escape:'html'}</span>
+                    {/if}
+                  </td>
+                  <td>
+                    {if $row.bsale_doc_id}
+                      {if $row.bsale_doc_url}
+                        <a href="{$row.bsale_doc_url|escape:'html'}" target="_blank" rel="noopener">
+                          N°{$row.bsale_doc_number|escape:'html'}&nbsp;<i class="icon-external-link"></i>
+                        </a>
+                      {else}
+                        N°{$row.bsale_doc_number|escape:'html'}
+                      {/if}
+                    {else}
+                      <span class="text-muted">—</span>
+                    {/if}
+                  </td>
+                  <td>
+                    {if $row.emitted_doc_id}
+                      {if $row.emitted_doc_url}
+                        <a href="{$row.emitted_doc_url|escape:'html'}" target="_blank" rel="noopener">
+                          {$row.emitted_doc_type|escape:'html'} N°{$row.emitted_doc_number|escape:'html'}&nbsp;<i class="icon-external-link"></i>
+                        </a>
+                      {else}
+                        {$row.emitted_doc_type|escape:'html'} N°{$row.emitted_doc_number|escape:'html'}
+                      {/if}
+                    {else}
+                      <span class="text-muted">—</span>
+                    {/if}
+                  </td>
+                  <td class="text-right">
+                    {if $row.status == 'pending' || $row.status == 'error'}
+                      <button class="btn btn-xs btn-default bs-order-generate" data-order="{$row.id_order}">
+                        <i class="icon-file-text"></i>&nbsp;{l s='Generar' mod='synkrop'}
+                      </button>
+                    {/if}
+                    {if $row.error_message}
+                      <i class="icon-info-sign text-muted" title="{$row.error_message|escape:'html'}"></i>
+                    {/if}
+                  </td>
+                </tr>
+                {/foreach}
+              </tbody>
+            </table>
+          </div>
+          {else}
+          <div class="text-center text-muted" style="padding:20px 12px">
+            <i class="icon-shopping-cart" style="font-size:28px;display:block;margin-bottom:8px"></i>
+            <p style="margin:0">
+              {l s='Sin pedidos en cola. Cuando un pedido llegue al estado gatillo (Pago aceptado), aparecera aqui.' mod='synkrop'}
+            </p>
+          </div>
+          {/if}
+        </div>
+        {/if}
+      </div>
+    </div>
+  </div>
+
 </div>
 
 {* ── MODAL detalle de errores ────────────────────────────────────────────── *}
@@ -600,6 +746,54 @@
       var body = document.getElementById('bs-errors-modal-body');
       if (body) body.innerHTML = html;
       if (window.jQuery) jQuery('#bs-errors-modal').modal('show');
+    });
+  });
+
+  // ── Ventas: pedidos → documentos Bsale ─────────────────────────────────────
+
+  var ordersStatus = document.getElementById('bs-orders-status');
+
+  function ordersAction(action, params, btn, busyLabel) {
+    var buttons = document.querySelectorAll(
+      '#bs-orders-generate-all, #bs-orders-check-emissions, .bs-order-generate'
+    );
+    buttons.forEach(function (b) { b.disabled = true; });
+    fieldStatus(ordersStatus, 'loading', busyLabel);
+
+    post(action, params)
+      .then(function (data) {
+        fieldStatus(ordersStatus, data.success ? 'success' : 'error', data.message || '');
+        // Refresca la tabla para reflejar estados y links nuevos
+        if (data.generated || data.failed || data.emitted || data.closed) {
+          setTimeout(function () { location.reload(); }, 1200);
+        } else {
+          buttons.forEach(function (b) { b.disabled = false; });
+        }
+      })
+      .catch(function () {
+        fieldStatus(ordersStatus, 'error', 'Error de red — reintenta');
+        buttons.forEach(function (b) { b.disabled = false; });
+      });
+  }
+
+  var genAllBtn = document.getElementById('bs-orders-generate-all');
+  if (genAllBtn) {
+    genAllBtn.addEventListener('click', function () {
+      ordersAction('GenerateOrderDoc', {}, genAllBtn, 'Generando notas de venta...');
+    });
+  }
+
+  var checkBtn = document.getElementById('bs-orders-check-emissions');
+  if (checkBtn) {
+    checkBtn.addEventListener('click', function () {
+      ordersAction('CheckEmissions', {}, checkBtn, 'Consultando emisiones en Bsale...');
+    });
+  }
+
+  document.querySelectorAll('.bs-order-generate').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      ordersAction('GenerateOrderDoc', { id_order: btn.dataset.order }, btn,
+        'Generando nota de venta del pedido...');
     });
   });
 
