@@ -191,3 +191,74 @@ Growth/Agency (misma lógica que "sync automático cada 15 min" de la tabla de p
   crea la nota de venta con reintentos, y extensión del adapter de webhooks para el topic
   `document` (hoy se ignora) con resolución + correlación.
 - `shared`: modelo canónico `CanonicalOrder`/`CanonicalDocument`.
+
+---
+
+## 4. Plan de implementación (17-jul-2026)
+
+**Orden estratégico: Fase 1 primero y completa.** El modo semi-manual funciona sin tocar
+bot-miki, entrega valor vendible de inmediato (Allgrano), y la Fase 2 solo agrega el motor
+automático sobre la misma lógica.
+
+### Fase 1 — Plugin PrestaShop: cola + modo semi-manual
+
+1. **Migración SQL** (`sql/migrate_add_order_queue.sql` + `install.sql`):
+   - `synkrop_order_queue`: `id`, `id_order UNIQUE`, `id_cart`, `status`
+     (`pending|generated|emitted|closed|error`), `bsale_doc_id`, `bsale_doc_number`,
+     `bsale_doc_url`, `emitted_doc_id/number/url/type`, `error_details` (JSON válido,
+     nunca `''` — lección MariaDB), `created_at`/`updated_at` en **UTC con `gmdate()`**
+     (lección #100).
+   - `synkrop_invoice_request` (`id_cart` PK): rut, razón social, giro, dirección, teléfono,
+     ciudad, comuna (datos factura del checkout).
+2. **Hook `actionOrderStatusUpdate`** en `synkrop.php`: si el nuevo estado ∈ estados
+   configurados (default: Pago aceptado) → `INSERT IGNORE` en la cola. Nada más — el hook no
+   llama a Bsale (a diferencia del legado): rápido y sin riesgo en el checkout.
+3. **`SynkropService::createSaleNote(int $idOrder)`** (lógica compartida por ambos modos):
+   - Dedupe: status de la cola + `GET documents.json?number=` como cinturón.
+   - Payload: detalle desde `Order::getProducts()` (SKU=reference, neto=precio÷(1+tasa IVA
+     **configurable**, no 1.19 hardcode), descuentos prorrateados, línea de despacho),
+     `client` obligatorio desde la dirección de facturación (RUT validado módulo 11),
+     tipo de documento **descubierto por nombre** ("NOTA VENTA") y cacheado en config.
+     Packs: v1 los rechaza con error claro en la cola (no replicar los ~150 líneas frágiles
+     del legado; se aborda en fase 3).
+   - POST vía `BsaleApiClient` → guarda `bsale_doc_*` + status `generated` (o `error` con
+     detalle legible).
+4. **Panel admin** (`AdminSynkropController`, pestaña "Ventas"): tabla de la cola con estados
+   y links (nota de venta y doc emitido hipervinculados a `urlPdf`), botones **[Generar]**
+   (fila y lote) y **[Verificar emisiones]**. Sin endpoints públicos nuevos (lección psJson).
+5. **`SynkropService::checkEmissions()`**: para cada fila `generated`, busca en Bsale docs
+   posteriores del mismo cliente con mismo total+SKUs y tipo tributario (boleta/factura) →
+   `emitted` → cambia el estado del pedido PS al configurado ("Preparación en curso") →
+   `closed`. Ambigüedad → status `review` visible en panel.
+6. **Checkout boleta/factura**: formulario en `displayPaymentTop`/equivalente 1.7 con RUT +
+   autocompletado (patrón del legado, pero vía controller autenticado por token de módulo).
+7. **Tests PHPUnit**: builder del payload (prorrateo, IVA, RUT), transiciones de estado,
+   dedupe. **Deploy**: allgrano.com por FTP (`ssh/allgrano.sh`, agregar tarea deploy-synkrop).
+
+### Fase 2 — bot-miki: motor automático
+
+1. **Migración 004**: tabla `order_documents` (store_id, ps_order_id, bsale_doc_id,
+   client_code, total_amount, skus_hash, status, `UNIQUE(store_id, ps_order_id)`).
+2. **`POST /v1/orders`** (auth `X-API-Key` contra `licenses.api_key`, patrón sync-report/#91):
+   el plugin envía la orden canónica al encolar (solo si licencia válida — si no, opera
+   semi-manual). Encola job `create-sale-note` (idempotencia BullMQ + UNIQUE).
+3. **Worker**: crea la nota vía API Bsale con reintentos (`PermanentSyncError` para 4xx,
+   patrón #93), guarda huella de correlación, notifica al plugin (`webhook.php` action nueva
+   `order_document`) → la cola local pasa a `generated`.
+4. **Topic `document`**: sacarlo de la lista de ignorados en `routes/webhooks.ts:47` →
+   worker resuelve el doc → match contra `order_documents` (client+total+skus_hash) →
+   notifica al plugin → `emitted`/`closed` sin intervención.
+5. **Scheduler**: conciliación horaria (cubre webhooks perdidos) reutilizando el polling.
+6. **`shared`**: `CanonicalOrder` + `CanonicalSaleDocument` con Zod.
+
+### Fase 3 — Extras
+
+Email al comprador con link del documento (config), packs, notas de crédito (solo aviso,
+emisión humana), multi-moneda/multi-tienda, dashboard agencia.
+
+### Decisiones abiertas al implementar
+
+- Confirmación topic `document` (monitor en curso / correo a ayuda@bsale.app).
+- Estado PS de destino al cerrar (¿"Preparación en curso" o estado custom "Documentado"?).
+- Qué hacer con pedidos cancelados con nota `generated` (¿anular nota vía API? verificar
+  endpoint DELETE/anulación en sandbox).
