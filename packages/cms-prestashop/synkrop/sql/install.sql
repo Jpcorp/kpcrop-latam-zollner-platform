@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     `order_vat_rate`        DECIMAL(5,2) NOT NULL DEFAULT 19.00,
     `sale_doc_type_id`      INT UNSIGNED DEFAULT NULL,
     `shipping_sku`          VARCHAR(64) NOT NULL DEFAULT '',
+    `test_mode`             TINYINT(1) NOT NULL DEFAULT 0,
     `on_inactive_product`   VARCHAR(10) NOT NULL DEFAULT 'deactivate',
     `last_sync_at`          DATETIME DEFAULT NULL,
     `last_sync_status`      VARCHAR(20) DEFAULT NULL,

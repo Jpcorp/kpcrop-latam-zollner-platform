@@ -380,8 +380,17 @@ class OrderDocumentService
             }
             $type    = $doc['document_type'] ?? [];
             $codeSii = trim((string)($type['codeSii'] ?? ''));
+            $isSaleNote = stripos((string)($type['name'] ?? ''), 'nota venta') !== false
+                || stripos((string)($type['name'] ?? ''), 'nota de venta') !== false;
             if ($codeSii === '') {
-                continue; // no tributario (otra nota de venta, pedido, cotización…)
+                // Sin modo prueba: solo cuenta como emision un documento tributario
+                // (boleta/factura electronica). Con modo prueba (sandbox/staging sin
+                // SII): se acepta cualquier documento manual que NO sea otra nota de
+                // venta, para poder validar el cierre sin boleta electronica real.
+                $testMode = (int)($this->loadConfig()['test_mode'] ?? 0);
+                if (!$testMode || $isSaleNote) {
+                    continue;
+                }
             }
             if (round((float)$doc['totalAmount'], 2) !== round((float)$row['total_amount'], 2)) {
                 continue;

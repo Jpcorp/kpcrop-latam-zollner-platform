@@ -22,7 +22,7 @@ class Synkrop extends Module
     {
         $this->name          = 'synkrop';
         $this->tab           = 'administration';
-        $this->version       = '1.1.0';
+        $this->version       = '1.2.0';
         $this->author        = 'kpcrop-latam';
         $this->need_instance = 0;
         $this->bootstrap     = true;
@@ -282,6 +282,7 @@ class Synkrop extends Module
                 'order_trigger_states' => pSQL($triggerStates),
                 'order_vat_rate'       => $vatRate,
                 'shipping_sku'         => pSQL(trim((string)Tools::getValue('SYNKROP_SHIPPING_SKU', ''))),
+                'test_mode'            => (int)Tools::getValue('SYNKROP_TEST_MODE', 0),
             ],
             'id_shop = ' . (int)$this->context->shop->id
         );
@@ -351,6 +352,16 @@ class Synkrop extends Module
                         'name'  => 'SYNKROP_SHIPPING_SKU',
                         'desc'  => $this->l('SKU del servicio de despacho en tu catalogo Bsale (crealo una vez, sin control de stock). En blanco: Bsale creara una variante nueva por cada documento con envio. Util si el despacho es propio; si lo externalizas, define aqui el SKU que uses para cobrarlo.'),
                     ],
+                    [
+                        'type'    => 'switch',
+                        'label'   => $this->l('Modo prueba (verificacion de emisiones)'),
+                        'name'    => 'SYNKROP_TEST_MODE',
+                        'desc'    => $this->l('SOLO para sandbox o staging. "Verificar emisiones" acepta cualquier documento manual (boleta/factura no tributaria) como emision valida, sin exigir codigo SII. NUNCA actives esto en produccion: se saltaria la validacion de documento tributario real.'),
+                        'values'  => [
+                            ['id' => 'test_mode_on',  'value' => 1, 'label' => $this->l('Sí (solo pruebas)')],
+                            ['id' => 'test_mode_off', 'value' => 0, 'label' => $this->l('No')],
+                        ],
+                    ],
                 ],
                 'submit' => ['title' => $this->l('Guardar'), 'class' => 'btn btn-default pull-right'],
             ],
@@ -378,6 +389,7 @@ class Synkrop extends Module
             'SYNKROP_ORDER_TRIGGER_STATES' => $config['order_trigger_states'] ?? '2',
             'SYNKROP_ORDER_VAT_RATE'       => $config['order_vat_rate'] ?? '19.00',
             'SYNKROP_SHIPPING_SKU'         => $config['shipping_sku'] ?? '',
+            'SYNKROP_TEST_MODE'            => (int)($config['test_mode'] ?? 0),
         ];
 
         return $helper->generateForm([$fields]);
