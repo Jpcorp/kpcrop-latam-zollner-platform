@@ -258,11 +258,18 @@ class Synkrop extends Module
         $priceList = (int)Tools::getValue('SYNKROP_PRICE_LIST_ID');
         $officeId  = (int)Tools::getValue('SYNKROP_OFFICE_ID');
 
-        if (empty($token) || empty($apiKey)) {
+        // El campo del token nunca se pre-llena (no se muestra en pantalla por
+        // seguridad) — dejarlo en blanco significa "no cambiar", no "borrar".
+        // Solo es obligatorio si todavia no hay un token guardado (alta inicial).
+        $existing = Db::getInstance()->getRow(
+            'SELECT bsale_api_token FROM `' . _DB_PREFIX_ . 'synkrop_config`
+             WHERE id_shop = ' . (int)$this->context->shop->id
+        );
+        $hasStoredToken = !empty($existing['bsale_api_token']);
+
+        if (empty($apiKey) || (empty($token) && !$hasStoredToken)) {
             return $this->displayError($this->l('El token de Bsale y la API Key de licencia son obligatorios.'));
         }
-
-        $encryptedToken = self::encryptToken($token);
 
         $syncOrders    = (int)Tools::getValue('SYNKROP_SYNC_ORDERS', 0);
         $triggerStates = implode(',', array_filter(array_map(
@@ -271,19 +278,25 @@ class Synkrop extends Module
         ))) ?: '2';
         $vatRate = (float)Tools::getValue('SYNKROP_ORDER_VAT_RATE', 19.0);
 
+        $data = [
+            'bsale_price_list_id'  => $priceList,
+            'bsale_office_id'      => $officeId ?: 'NULL',
+            'daemon_api_key'       => pSQL($apiKey),
+            'sync_orders'          => $syncOrders,
+            'order_trigger_states' => pSQL($triggerStates),
+            'order_vat_rate'       => $vatRate,
+            'shipping_sku'         => pSQL(trim((string)Tools::getValue('SYNKROP_SHIPPING_SKU', ''))),
+            'test_mode'            => (int)Tools::getValue('SYNKROP_TEST_MODE', 0),
+        ];
+
+        // Solo re-cifra y sobreescribe el token si el usuario pego uno nuevo
+        if (!empty($token)) {
+            $data['bsale_api_token'] = pSQL(self::encryptToken($token));
+        }
+
         Db::getInstance()->update(
             'synkrop_config',
-            [
-                'bsale_api_token'      => pSQL($encryptedToken),
-                'bsale_price_list_id'  => $priceList,
-                'bsale_office_id'      => $officeId ?: 'NULL',
-                'daemon_api_key'       => pSQL($apiKey),
-                'sync_orders'          => $syncOrders,
-                'order_trigger_states' => pSQL($triggerStates),
-                'order_vat_rate'       => $vatRate,
-                'shipping_sku'         => pSQL(trim((string)Tools::getValue('SYNKROP_SHIPPING_SKU', ''))),
-                'test_mode'            => (int)Tools::getValue('SYNKROP_TEST_MODE', 0),
-            ],
+            $data,
             'id_shop = ' . (int)$this->context->shop->id
         );
 
