@@ -33,7 +33,8 @@ class SynkropService
 
         switch ($topic) {
             case 'stock':
-                $variantId = (int)($bsaleData['variant']['id'] ?? 0);
+                // #98: variant.id puede venir ausente pero con variant.href resoluble
+                $variantId = $this->extractVariantId($bsaleData['variant'] ?? []);
                 if (!$variantId) {
                     $stockId    = (int)($bsaleData['id'] ?? 0);
                     $officeName = $bsaleData['office']['name'] ?? null;
@@ -51,15 +52,33 @@ class SynkropService
                     ];
                     break;
                 }
+
+                // #101: sin fallback para la cantidad — si no es numerica, es un error,
+                // no "0 unidades" (poner stock en 0 por error de forma sin distinguirlo).
+                if (!array_key_exists('quantityAvailable', $bsaleData) || !is_numeric($bsaleData['quantityAvailable'])) {
+                    $result->failed++;
+                    $result->errors[] = [
+                        'code'    => (string)$variantId,
+                        'message' => "Webhook de stock para variante #{$variantId} sin quantityAvailable numérico — no se aplica para evitar poner stock en 0 por error.",
+                    ];
+                    break;
+                }
+
                 $idProduct = $this->findProductByBsaleVariantId($variantId);
+                if (!$idProduct) {
+                    // #114: self-healing — una variante nueva en Bsale no tiene mapa local
+                    // todavia; en vez de perder el stock hasta el proximo Sync de Productos
+                    // manual, resolvemos la variante y la mapeamos ahora mismo.
+                    $idProduct = $this->healVariantMap($variantId);
+                }
                 if ($idProduct) {
-                    $this->setStockDirect($idProduct, (int)($bsaleData['quantityAvailable'] ?? 0));
+                    $this->setStockDirect($idProduct, (int)$bsaleData['quantityAvailable']);
                     $result->updated = 1;
                 } else {
                     $result->failed++;
                     $result->errors[] = [
                         'code'    => (string)$variantId,
-                        'message' => "Variante Bsale #{$variantId} no encontrada en el mapa local. Ejecuta un Sync de Productos primero.",
+                        'message' => "Variante Bsale #{$variantId} no encontrada en el mapa local y no se pudo resolver automáticamente contra Bsale (ver /v1/variants/{$variantId}.json).",
                     ];
                 }
                 break;
@@ -288,18 +307,34 @@ class SynkropService
         $stocks = $this->bsale->getAll('/v1/stocks.json');
 
         foreach ($stocks as $stock) {
+            $variantId = null;
             try {
-                $variantId = $stock['variant']['id'] ?? null;
-                if (!$variantId) continue;
+                // #98: mismo fallback variant.href que ya usaba el resolver de bot-miki —
+                // antes esta ruta bulk salteaba en silencio (updated=0, failed=0, status
+                // 'success') cualquier stock sin variant.id explicito.
+                $variantId = $this->extractVariantId($stock['variant'] ?? []);
+                if (!$variantId) {
+                    $result->failed++;
+                    $result->errors[] = ['code' => '0', 'message' => 'Stock sin variant.id ni variant.href resoluble — ver /v1/stocks.json'];
+                    continue;
+                }
 
-                $idProduct = $this->findProductByBsaleVariantId((int)$variantId);
-                if (!$idProduct) continue;
+                // #101: mismo criterio que syncSingle — cantidad no numerica es error,
+                // no "0 unidades".
+                if (!array_key_exists('quantityAvailable', $stock) || !is_numeric($stock['quantityAvailable'])) {
+                    $result->failed++;
+                    $result->errors[] = ['code' => (string)$variantId, 'message' => "quantityAvailable no numerico para variante #{$variantId}"];
+                    continue;
+                }
 
-                $this->setStockDirect($idProduct, (int)($stock['quantityAvailable'] ?? 0));
+                $idProduct = $this->findProductByBsaleVariantId($variantId);
+                if (!$idProduct) continue; // bulk: no self-healing aca (evitar N+1 llamadas a Bsale); usar Sync de Productos
+
+                $this->setStockDirect($idProduct, (int)$stock['quantityAvailable']);
                 $result->updated++;
             } catch (Exception $e) {
                 $result->failed++;
-                $result->errors[] = ['code' => (string)($stock['variant']['id'] ?? '?'), 'message' => $e->getMessage()];
+                $result->errors[] = ['code' => (string)($variantId ?? '?'), 'message' => $e->getMessage()];
             }
         }
 
@@ -314,6 +349,57 @@ class SynkropService
              WHERE bsale_variant_id = ' . $variantId . ' AND id_shop = ' . $this->idShop
         );
         return $id ?: null;
+    }
+
+    /**
+     * #98: extrae el id de variante desde el objeto `variant` de un payload de stock.
+     * Bsale a veces omite `variant.id` pero incluye `variant.href`
+     * (".../variants/123.json") — el mismo fallback que ya aplicaba el resolver de
+     * bot-miki (bsale-webhook-resolver.ts) para el path del webhook, ahora tambien
+     * en el sync bulk/manual, que leia `variant.id` directo del mismo endpoint.
+     */
+    private function extractVariantId(array $variant): ?int
+    {
+        if (!empty($variant['id'])) {
+            return (int)$variant['id'];
+        }
+        if (!empty($variant['href']) && preg_match('#/variants/(\d+)\.json#', (string)$variant['href'], $m)) {
+            return (int)$m[1];
+        }
+        return null;
+    }
+
+    /**
+     * #114: self-healing del mapa variante→producto. Si llega stock de una variante
+     * que Bsale conoce pero que todavia no esta en `synkrop_product_map` (producto
+     * nuevo, nunca corrio un Sync de Productos), la resolvemos ahora y la mapeamos,
+     * en vez de perder el stock hasta que alguien corra el sync manual.
+     * @return int|null id_product ya mapeado, o null si no se pudo resolver/crear
+     */
+    private function healVariantMap(int $variantId)
+    {
+        try {
+            $variant = $this->bsale->get('/v1/variants/' . $variantId . '.json', ['expand' => '[product]']);
+        } catch (Exception $e) {
+            return null;
+        }
+        if (empty($variant['id'])) {
+            return null;
+        }
+
+        $product = $variant['product'] ?? [
+            'name'        => $variant['description'] ?? $variant['code'] ?? '',
+            'description' => '',
+            'state'       => $variant['state'] ?? 1,
+        ];
+
+        try {
+            $this->upsertVariant($product, $variant);
+        } catch (Exception $e) {
+            return null;
+        }
+
+        return $this->findProductByBsaleVariantId($variantId);
     }
 
     private function syncPrices(): SyncResult

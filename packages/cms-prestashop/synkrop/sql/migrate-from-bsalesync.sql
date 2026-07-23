@@ -8,11 +8,12 @@
 -- Uso:
 --   mysql -u<user> -p<pass> <database> < migrate-from-bsalesync.sql
 --
--- Asume prefijo de tablas PS = "ps_". Ajustar si tu instalación usa otro.
+-- #112: asume prefijo de tablas PS = "ps_" en TODAS las sentencias de este
+-- archivo (son UPDATE/RENAME estáticos, no soportan una variable de sesión
+-- como nombre de tabla). Si tu instalación usa otro prefijo, reemplazá "ps_"
+-- por el tuyo en todo el archivo antes de ejecutarlo (find & replace).
 -- Es idempotente: se puede ejecutar más de una vez sin efectos secundarios.
 -- =============================================================================
-
-SET @db_prefix = 'ps_';
 
 -- ─── 1. ps_module ─────────────────────────────────────────────────────────────
 UPDATE ps_module

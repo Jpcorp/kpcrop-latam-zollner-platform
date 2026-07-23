@@ -29,6 +29,9 @@
     "lint": "phpcs --standard=PSR12 synkrop/classes/"
   },
   "config": {
-    "optimize-autoloader": true
+    "optimize-autoloader": true,
+    "platform": {
+      "php": "8.1"
+    }
   }
 }

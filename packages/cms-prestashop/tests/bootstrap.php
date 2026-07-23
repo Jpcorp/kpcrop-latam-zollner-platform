@@ -41,7 +41,7 @@ class Db
     {
         foreach ($this->queryResults as $pattern => $value) {
             if (strpos($sql, (string)$pattern) !== false) {
-                return $value;
+                return $value instanceof \Closure ? $value($sql) : $value;
             }
         }
         return null;
@@ -51,7 +51,8 @@ class Db
     {
         foreach ($this->queryResults as $pattern => $value) {
             if (strpos($sql, (string)$pattern) !== false) {
-                return is_array($value) ? $value : false;
+                $resolved = $value instanceof \Closure ? $value($sql) : $value;
+                return is_array($resolved) ? $resolved : false;
             }
         }
         return false;
@@ -61,7 +62,8 @@ class Db
     {
         foreach ($this->queryResults as $pattern => $value) {
             if (strpos($sql, (string)$pattern) !== false) {
-                return is_array($value) ? $value : [];
+                $resolved = $value instanceof \Closure ? $value($sql) : $value;
+                return is_array($resolved) ? $resolved : [];
             }
         }
         return [];
@@ -131,6 +133,16 @@ class Product
     public array $description = [];
     public float $price = 0.0;
     public int $active = 1;
+    public int $id_category_default = 0;
+    public array $link_rewrite = [];
+    public int $id_tax_rules_group = 0;
+    public int $minimal_quantity = 1;
+    public int $show_price = 1;
+    public int $is_virtual = 0;
+    public int $state = 1;
+    public string $visibility = 'both';
+    public int $available_for_order = 1;
+    public string $condition = 'new';
     public static array $added = [];
     public static array $updated = [];
 
@@ -152,6 +164,11 @@ class Product
         return true;
     }
 
+    public function addToCategories(array $categoryIds): bool
+    {
+        return true;
+    }
+
     public static function reset(): void
     {
         self::$added = [];
@@ -165,6 +182,15 @@ class Configuration
     {
         if ($key === 'PS_LANG_DEFAULT') return 1;
         return null;
+    }
+}
+
+class Tools
+{
+    public static function link_rewrite(string $name): string
+    {
+        $slug = strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '-', $name), '-'));
+        return $slug !== '' ? $slug : 'produit';
     }
 }
 

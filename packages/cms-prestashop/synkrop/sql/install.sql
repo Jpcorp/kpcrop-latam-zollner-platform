@@ -2,7 +2,9 @@
 CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     `id`                    INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_shop`               INT UNSIGNED NOT NULL DEFAULT 1,
-    `bsale_api_token`       TEXT NOT NULL DEFAULT '',
+    -- #112: TEXT no admite DEFAULT en MySQL <8.0.13/MariaDB <10.2 (error de sintaxis)
+    -- — sin default, el INSERT inicial de abajo provee el valor explicito.
+    `bsale_api_token`       TEXT NOT NULL,
     `bsale_integration_id`  INT UNSIGNED DEFAULT NULL,
     `bsale_price_list_id`   INT UNSIGNED DEFAULT NULL,
     `bsale_office_id`       INT UNSIGNED DEFAULT NULL,
@@ -41,8 +43,10 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_product_map` (
     `last_synced_at`        DATETIME DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_bsale_code_shop` (`bsale_code`, `id_shop`),
-    KEY `idx_product` (`id_product`),
-    KEY `idx_bsale_variant` (`bsale_variant_id`)
+    -- #103: unicidad por variante — evita filas huerfanas si el `code` de una
+    -- variante cambia en Bsale (findProductByBsaleVariantId asume 1 fila por variante)
+    UNIQUE KEY `uk_variant_shop` (`bsale_variant_id`, `id_shop`),
+    KEY `idx_product` (`id_product`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Imagenes importadas (evita re-importar en cada sync)
@@ -130,4 +134,4 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_invoice_request` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Fila inicial de config para la tienda por defecto
-INSERT IGNORE INTO `PREFIX_synkrop_config` (`id_shop`) VALUES (1);
+INSERT IGNORE INTO `PREFIX_synkrop_config` (`id_shop`, `bsale_api_token`) VALUES (1, '');
