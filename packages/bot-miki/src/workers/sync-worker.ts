@@ -98,7 +98,7 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
       // compatibilidad con sync manual).
       await processManualSync(job.data, job.id ?? undefined);
     } else {
-      await processPollingCycle(job.data, bsale, store.id);
+      await processPollingCycle(job.data, bsale, store.id, job.id ?? undefined);
     }
   } catch (err) {
     syncStatus = 'failed';
@@ -245,20 +245,43 @@ async function dispatchToCms(
   // que el plugin CMS llama al terminar el proceso en background.
 }
 
-async function processPollingCycle(
+export async function processPollingCycle(
   data: SyncJobData,
   bsale: BsaleHttpClient,
   storeId: string,
+  jobId?: string,
 ): Promise<void> {
-  // Polling de fallback: descargar catalogo completo y detectar cambios por hash
-  // expand=variants reduce llamadas (trae variantes en la misma respuesta)
-  const response = await bsale.get<{ items: unknown[]; count: number }>(
-    '/v1/products.json?expand=[variants]&limit=50&offset=0',
-  );
+  const store = await db
+    .selectFrom('tenant_stores')
+    .select(['cms_url', 'cms_webhook_secret'])
+    .where('id', '=', storeId)
+    .executeTakeFirstOrThrow();
+
+  if (!store.cms_url) {
+    throw new Error(`Store ${storeId} no tiene cms_url configurada`);
+  }
+
+  // #79: Bsale no tiene updated_since (ADR-004) — se descarga el catalogo
+  // completo, paginado (mismo tamano de pagina y misma condicion de corte
+  // que BsaleApiClient::getAll() en PHP: hasta que una pagina viene incompleta).
+  // expand=variants reduce llamadas (trae variantes en la misma respuesta).
+  const products: Array<Record<string, unknown>> = [];
+  const pageSize = 50;
+  let offset = 0;
+  let page: { items: unknown[]; count: number };
+  do {
+    page = await bsale.get<{ items: unknown[]; count: number }>(
+      `/v1/products.json?expand=[variants]&limit=${pageSize}&offset=${offset}`,
+    );
+    products.push(...(page.items as Array<Record<string, unknown>>));
+    offset += pageSize;
+  } while (page.items.length === pageSize);
 
   let changed = 0;
+  let dispatched = 0;
+  let failed = 0;
 
-  for (const product of response.items as Array<Record<string, unknown>>) {
+  for (const product of products) {
     const variants = (product['variants'] as { items: Array<Record<string, unknown>> })?.items ?? [];
 
     for (const variant of variants) {
@@ -272,19 +295,37 @@ async function processPollingCycle(
         .where('variant_id', '=', variantId)
         .executeTakeFirst();
 
-      if (!snapshot || snapshot.content_hash !== hash) {
-        // Variante nueva o modificada — encolar sync especifico
-        changed++;
+      if (snapshot && snapshot.content_hash === hash) continue;
+
+      changed++;
+
+      try {
+        // #79: mismo payload quirurgico {topic, bsaleData} que ya acepta
+        // webhook.php — se agrega el producto padre para que
+        // SynkropService::syncSingle() tenga nombre/estado reales (sin esto
+        // cae al fallback de description/code, ver SynkropService.php).
+        await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId, {
+          topic:     'variant',
+          bsaleData: { ...variant, product },
+        });
+        dispatched++;
+
         await db
           .insertInto('bsale_variant_snapshots')
           .values({ tenant_id: data.tenantId, variant_id: variantId, content_hash: hash, last_known_data: variant, last_seen_at: new Date() })
           .onConflict(oc => oc.columns(['tenant_id', 'variant_id']).doUpdateSet({ content_hash: hash, last_known_data: variant, last_seen_at: new Date() }))
           .execute();
+      } catch (err) {
+        // #79: una variante que falla no debe tirar abajo el resto del
+        // catalogo — se salta el upsert del snapshot a proposito, para que
+        // el proximo ciclo de polling la vuelva a detectar como cambiada.
+        failed++;
+        console.error(`[polling:variant-error] jobId=${jobId ?? '-'} variantId=${variantId}`, err);
       }
     }
   }
 
-  console.log(`[polling] store=${storeId} changed=${changed}/${response.count}`);
+  console.log(`[polling] jobId=${jobId ?? '-'} store=${storeId} changed=${changed} dispatched=${dispatched} failed=${failed} total=${products.length}`);
 }
 
 function computeHash(variant: Record<string, unknown>): string {

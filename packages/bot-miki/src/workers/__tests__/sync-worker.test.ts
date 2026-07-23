@@ -6,11 +6,13 @@ import type { SyncJobData } from '../sync-worker.js';
 
 const {
   mockSelectExecuteTakeFirstOrThrow,
+  mockSnapshotExecuteTakeFirst,
   mockInsertExecute,
   mockUpdateExecute,
   mockResolveWebhookResource,
 } = vi.hoisted(() => ({
   mockSelectExecuteTakeFirstOrThrow: vi.fn(),
+  mockSnapshotExecuteTakeFirst:      vi.fn(),
   mockInsertExecute:                 vi.fn().mockResolvedValue([]),
   mockUpdateExecute:                 vi.fn().mockResolvedValue([]),
   mockResolveWebhookResource:        vi.fn(),
@@ -31,15 +33,17 @@ vi.mock('../../infrastructure/database.js', () => {
     select:    () => selectChain,
     where:     () => selectChain,
     executeTakeFirstOrThrow: mockSelectExecuteTakeFirstOrThrow,
+    executeTakeFirst:        mockSnapshotExecuteTakeFirst,
   };
   const updateChain = {
     set:     () => updateChain,
     where:   () => updateChain,
     execute: mockUpdateExecute,
   };
-  const insertChain = {
-    values:  () => ({ execute: mockInsertExecute }),
-  };
+  const insertChain: Record<string, unknown> = {};
+  insertChain['values']     = () => insertChain;
+  insertChain['onConflict'] = () => insertChain;
+  insertChain['execute']    = mockInsertExecute;
   return {
     db: {
       selectFrom:  () => selectChain,
@@ -60,7 +64,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 // ── Import bajo test (después de los mocks) ───────────────────────────────────
 
-const { processWebhookEvent, processManualSync, PermanentSyncError } = await import('../sync-worker.js');
+const { processWebhookEvent, processManualSync, processPollingCycle, PermanentSyncError } = await import('../sync-worker.js');
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -399,5 +403,124 @@ describe('processManualSync (#55: sync manual disparado desde /v1/agency/clients
     mockFetch.mockResolvedValueOnce({ ok: false, status: 422 });
 
     await expect(processManualSync(manualJobData)).rejects.toBeInstanceOf(PermanentSyncError);
+  });
+});
+
+describe('processPollingCycle (#79: diff contra bsale_variant_snapshots)', () => {
+  // Mismo algoritmo que computeHash() en sync-worker.ts — para poder construir
+  // en el test un snapshot que "matchea" o "no matchea" a propósito.
+  const computeExpectedHash = (variant: Record<string, unknown>): string => {
+    const relevant = { code: variant['code'], cost: variant['cost'], quantity: variant['quantity'], state: variant['state'] };
+    return Buffer.from(JSON.stringify(relevant)).toString('base64');
+  };
+
+  // Fixture con forma real de Bsale (GET /v1/products.json?expand=[variants]).
+  const bsaleVariantFixture = (overrides: Record<string, unknown> = {}) => ({
+    id: 9001, code: 'POL-001', cost: 9990, quantity: 12, state: 1, description: 'Talla M',
+    ...overrides,
+  });
+  const bsaleProductFixture = (variants: Array<Record<string, unknown>>) => ({
+    id: 500, name: 'Polera Básica', description: '', state: 1,
+    variants: { items: variants },
+  });
+
+  const pollJobData: SyncJobData = {
+    storeId:  'store-uuid-1',
+    tenantId: 'allgrano-cl',
+    syncType: 'polling',
+  };
+
+  let mockBsaleGet: ReturnType<typeof vi.fn>;
+  let bsalePolling: BsaleHttpClient;
+
+  beforeEach(() => {
+    mockBsaleGet = vi.fn();
+    bsalePolling = { get: mockBsaleGet } as unknown as BsaleHttpClient;
+  });
+
+  function onePageResponse(products: Array<Record<string, unknown>>) {
+    mockBsaleGet.mockResolvedValueOnce({ items: products, count: products.length });
+  }
+
+  it('pagina hasta que una página viene incompleta', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    const fullPage = Array.from({ length: 50 }, (_, i) => bsaleProductFixture([bsaleVariantFixture({ id: 9000 + i })]));
+    mockBsaleGet
+      .mockResolvedValueOnce({ items: fullPage, count: 50 })      // pagina 1: llena -> sigue
+      .mockResolvedValueOnce({ items: [], count: 0 });            // pagina 2: vacia -> corta
+    mockSnapshotExecuteTakeFirst.mockResolvedValue(undefined);
+    mockFetch.mockResolvedValue(okFetchResponse());
+
+    await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+    expect(mockBsaleGet).toHaveBeenCalledTimes(2);
+    expect(mockBsaleGet.mock.calls[0][0]).toContain('offset=0');
+    expect(mockBsaleGet.mock.calls[1][0]).toContain('offset=50');
+  });
+
+  it('variante nueva (sin snapshot previo) se despacha al CMS y se guarda el snapshot', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    const variant = bsaleVariantFixture();
+    onePageResponse([bsaleProductFixture([variant])]);
+    mockSnapshotExecuteTakeFirst.mockResolvedValueOnce(undefined); // sin snapshot
+    mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+    await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const [, fetchOpts] = mockFetch.mock.calls[0];
+    const body = JSON.parse(fetchOpts.body);
+    expect(body.topic).toBe('variant');
+    expect(body.bsaleData.id).toBe(variant.id);
+    expect(body.bsaleData.product.id).toBe(500); // producto padre incluido
+    expect(mockInsertExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('variante sin cambios (mismo hash) NO se despacha', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    const variant = bsaleVariantFixture();
+    onePageResponse([bsaleProductFixture([variant])]);
+    mockSnapshotExecuteTakeFirst.mockResolvedValueOnce({ content_hash: computeExpectedHash(variant) });
+
+    await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockInsertExecute).not.toHaveBeenCalled();
+  });
+
+  it('variante con hash distinto al snapshot se despacha (cambio real detectado)', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    const variant = bsaleVariantFixture({ quantity: 3 }); // cambio de stock respecto al snapshot
+    onePageResponse([bsaleProductFixture([variant])]);
+    mockSnapshotExecuteTakeFirst.mockResolvedValueOnce({ content_hash: computeExpectedHash(bsaleVariantFixture({ quantity: 12 })) });
+    mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+    await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockInsertExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('si el dispatch de una variante falla, no rompe el ciclo y no actualiza su snapshot (se reintenta el próximo ciclo)', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    const variantA = bsaleVariantFixture({ id: 1 });
+    const variantB = bsaleVariantFixture({ id: 2 });
+    onePageResponse([bsaleProductFixture([variantA, variantB])]);
+    mockSnapshotExecuteTakeFirst.mockResolvedValue(undefined);
+    mockFetch
+      .mockResolvedValueOnce({ ok: false, status: 503 }) // variante A falla (transitorio)
+      .mockResolvedValueOnce(okFetchResponse());          // variante B ok
+
+    await expect(processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1')).resolves.toBeUndefined();
+
+    expect(mockFetch).toHaveBeenCalledTimes(2);
+    expect(mockInsertExecute).toHaveBeenCalledTimes(1); // solo la que sí se pudo despachar
+  });
+
+  it('lanza error si la tienda no tiene cms_url configurada', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce({ cms_url: null, cms_webhook_secret: 'secret' });
+
+    await expect(processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1'))
+      .rejects.toThrow('no tiene cms_url configurada');
   });
 });
