@@ -109,7 +109,7 @@ register_shutdown_function(function () use (&$logWritten, &$syncResult, $syncEnt
 });
 
 try {
-    $decryptedToken = Synkrop::decryptToken($fullConfig['bsale_api_token']);
+    $decryptedToken = TokenCipher::decrypt($fullConfig['bsale_api_token']);
     $bsale   = new BsaleApiClient($decryptedToken);
     // #99: LicenseClient ya no toma tenantId — nunca se usaba (la request real
     // solo manda X-API-Key), y el hash md5 no coincidia con licenses.tenant_id.

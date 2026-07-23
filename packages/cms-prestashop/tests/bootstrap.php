@@ -6,6 +6,8 @@
 
 define('_PS_VERSION_', '1.7.8.0');
 define('_DB_PREFIX_', 'ps_');
+// #115: llave de prueba para TokenCipher — nunca la real de produccion.
+define('_COOKIE_KEY_', 'clave_de_prueba_para_phpunit_no_es_la_real_1234567890');
 
 function pSQL(string $str): string
 {
@@ -207,3 +209,4 @@ require_once __DIR__ . '/../synkrop/classes/BsaleApiClient.php';
 require_once __DIR__ . '/../synkrop/classes/LicenseClient.php';
 require_once __DIR__ . '/../synkrop/classes/SynkropService.php';
 require_once __DIR__ . '/../synkrop/classes/OrderDocumentService.php';
+require_once __DIR__ . '/../synkrop/classes/TokenCipher.php';

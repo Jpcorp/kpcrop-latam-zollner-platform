@@ -159,7 +159,7 @@ class AdminSynkropController extends ModuleAdminController
             if (empty($enc)) {
                 $this->ajaxDie(json_encode(['success' => false, 'message' => 'Token no configurado']));
             }
-            $bsaleToken = Synkrop::decryptToken($enc);
+            $bsaleToken = TokenCipher::decrypt($enc);
         } else {
             $bsaleToken = Tools::getValue('token');
             if (empty($bsaleToken)) {
@@ -229,7 +229,7 @@ class AdminSynkropController extends ModuleAdminController
             ]));
         }
 
-        $encryptedToken = Synkrop::encryptToken($bsaleToken);
+        $encryptedToken = TokenCipher::encrypt($bsaleToken);
 
         Db::getInstance()->update(
             'synkrop_config',
@@ -341,7 +341,7 @@ class AdminSynkropController extends ModuleAdminController
             throw new RuntimeException($this->l('El flujo de ventas está desactivado — actívalo en la configuración del módulo.'));
         }
 
-        $token = Synkrop::decryptToken($config['bsale_api_token']);
+        $token = TokenCipher::decrypt($config['bsale_api_token']);
         return new OrderDocumentService(new BsaleApiClient($token), (int)$this->context->shop->id);
     }
 
@@ -353,7 +353,7 @@ class AdminSynkropController extends ModuleAdminController
             throw new RuntimeException($this->l('Configura el token de Bsale y la API Key antes de sincronizar.'));
         }
 
-        $decryptedToken = Synkrop::decryptToken($config['bsale_api_token']);
+        $decryptedToken = TokenCipher::decrypt($config['bsale_api_token']);
         $bsale          = new BsaleApiClient($decryptedToken);
         $license        = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']); // #99: sin tenantId muerto
 

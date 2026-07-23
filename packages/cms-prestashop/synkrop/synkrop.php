@@ -15,6 +15,7 @@ require_once __DIR__ . '/classes/BsaleApiClient.php';
 require_once __DIR__ . '/classes/LicenseClient.php';
 require_once __DIR__ . '/classes/SynkropService.php';
 require_once __DIR__ . '/classes/OrderDocumentService.php';
+require_once __DIR__ . '/classes/TokenCipher.php';
 
 class Synkrop extends Module
 {
@@ -230,7 +231,7 @@ class Synkrop extends Module
 
     private function buildOrderDocumentService(array $config): OrderDocumentService
     {
-        $token = self::decryptToken((string)$config['bsale_api_token']);
+        $token = TokenCipher::decrypt((string)$config['bsale_api_token']);
         return new OrderDocumentService(new BsaleApiClient($token), (int)$this->context->shop->id);
     }
 
@@ -291,7 +292,7 @@ class Synkrop extends Module
 
         // Solo re-cifra y sobreescribe el token si el usuario pego uno nuevo
         if (!empty($token)) {
-            $data['bsale_api_token'] = pSQL(self::encryptToken($token));
+            $data['bsale_api_token'] = pSQL(TokenCipher::encrypt($token));
         }
 
         Db::getInstance()->update(
@@ -510,25 +511,5 @@ class Synkrop extends Module
         }
 
         return $this->displayConfirmation($this->l('Mapeo de precios guardado correctamente.'));
-    }
-
-    // ─── Cifrado de token de Bsale ────────────────────────────────────────────
-
-    public static function encryptToken(string $token): string
-    {
-        $key = substr(_COOKIE_KEY_, 0, 32);
-        $iv  = openssl_random_pseudo_bytes(16);
-        $encrypted = openssl_encrypt($token, 'AES-256-CBC', $key, 0, $iv);
-        return base64_encode($iv . '::' . $encrypted);
-    }
-
-    public static function decryptToken(string $encrypted): string
-    {
-        $key  = substr(_COOKIE_KEY_, 0, 32);
-        $data = base64_decode($encrypted);
-        $parts = explode('::', $data, 2);
-        $iv = $parts[0];
-        $ciphertext = $parts[1];
-        return openssl_decrypt($ciphertext, 'AES-256-CBC', $key, 0, $iv) ?: '';
     }
 }
