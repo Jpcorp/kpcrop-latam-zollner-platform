@@ -56,6 +56,26 @@ describe('runSchedulerTick — idempotencia (#106)', () => {
     expect(jobData.tenantId).toBe('tenant-1'); // el fixture `job` simula la fila ya con licenses.tenant_id
   });
 
+  it('#115: respeta el campo dia-de-semana — "0 2 * * 1" solo corre los lunes', async () => {
+    const weeklyJob = { ...job, cron_expression: '0 2 * * 1' };
+    mockExecute.mockResolvedValue([weeklyJob]);
+    const addMock = vi.fn().mockResolvedValue(undefined);
+    const queue = { add: addMock } as unknown as Queue;
+
+    // 5 de enero 2026 es lunes (construido en hora local para no depender
+    // de la TZ del entorno que corre el test)
+    vi.setSystemTime(new Date(2026, 0, 5, 2, 0, 0));
+    await runSchedulerTick(queue);
+    expect(addMock).toHaveBeenCalledTimes(1);
+
+    // 6 de enero 2026 es martes — antes de este fix, tambien corria (el
+    // campo dia-de-semana se ignoraba en silencio)
+    addMock.mockClear();
+    vi.setSystemTime(new Date(2026, 0, 6, 2, 0, 0));
+    await runSchedulerTick(queue);
+    expect(addMock).not.toHaveBeenCalled();
+  });
+
   it('genera jobId distinto para dos ticks del mismo cron en minutos distintos de la misma hora', async () => {
     const addMock = vi.fn().mockResolvedValue(undefined);
     const queue = { add: addMock } as unknown as Queue;

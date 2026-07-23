@@ -31,20 +31,25 @@ async function acquireSchedulerLock(): Promise<boolean> {
   return result === 'OK';
 }
 
+// #115: cronMatches solo miraba minuto/hora — "0 2 * * 1" (lunes a las 02:00)
+// corria TODOS los dias, no solo lunes, porque dia-de-mes/mes/dia-de-semana
+// se ignoraban en silencio.
+function fieldMatches(field: string, value: number): boolean {
+  if (field === '*') return true;
+  if (field.startsWith('*/')) return value % parseInt(field.slice(2), 10) === 0;
+  return parseInt(field, 10) === value;
+}
+
 function cronMatches(expression: string, now: Date): boolean {
-  // Evaluacion minimalista de cron — solo patrones usados en la plataforma:
-  //   "0 * * * *"    → en punto de cada hora
-  //   "*/15 * * * *" → cada 15 minutos
-  //   "*/30 * * * *" → cada 30 minutos
-  //   "0 2 * * *"    → a las 02:00 todos los dias
-  const [min, hour] = expression.split(' ');
-  const m = now.getMinutes();
-  const h = now.getHours();
+  // Evaluacion minimalista de cron — soporta "*", "*/N" y valores exactos en
+  // los 5 campos estandar (min hour day-of-month month day-of-week).
+  const [min, hour, dayOfMonth, month, dayOfWeek] = expression.split(' ');
 
-  const matchMin  = min  === '*' ? true : min.startsWith('*/') ? m % parseInt(min.slice(2)) === 0 : parseInt(min) === m;
-  const matchHour = hour === '*' ? true : parseInt(hour) === h;
-
-  return matchMin && matchHour;
+  return fieldMatches(min, now.getMinutes())
+    && fieldMatches(hour, now.getHours())
+    && fieldMatches(dayOfMonth, now.getDate())
+    && fieldMatches(month, now.getMonth() + 1)
+    && fieldMatches(dayOfWeek, now.getDay());
 }
 
 export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void> {
