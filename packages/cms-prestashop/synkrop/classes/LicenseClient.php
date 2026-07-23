@@ -109,12 +109,25 @@ class LicenseClient
             'synkrop_config',
             [
                 'license_jwt'         => pSQL($data['token']),
-                'license_jwt_expires' => pSQL($data['expiresAt']),
+                'license_jwt_expires' => pSQL(self::formatExpiresAt($data['expiresAt'])),
             ],
             'id_shop = ' . (int)Context::getContext()->shop->id
         );
 
         return $data['token'];
+    }
+
+    /**
+     * #115: license_jwt_expires es DATETIME — bot-miki manda expiresAt en
+     * ISO 8601 (ej. "2026-07-23T08:36:58.123Z"), formato que MySQL rechaza
+     * directo en una columna DATETIME (ERROR 1292: Incorrect datetime value,
+     * verificado). El UPDATE fallaba en silencio (no se chequeaba el
+     * resultado) y el cache de 4 minutos nunca llegaba a guardarse — cada
+     * operacion terminaba re-validando la licencia contra bot-miki en vivo.
+     */
+    public static function formatExpiresAt(string $iso): string
+    {
+        return (new DateTime($iso))->format('Y-m-d H:i:s');
     }
 }
 
