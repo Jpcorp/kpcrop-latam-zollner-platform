@@ -21,6 +21,7 @@ vi.mock('../../config.js', () => ({
     JWT_SECRET: 'test_jwt_secret_minimum_32_characters_long',
     ADMIN_KEY,
     BSALE_RATE_LIMIT_RPS: 10,
+    TOKEN_ENCRYPTION_KEY: 'test_token_encryption_key_minimum_32_chars',
   },
 }));
 

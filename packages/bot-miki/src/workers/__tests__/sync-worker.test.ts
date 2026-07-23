@@ -21,6 +21,7 @@ vi.mock('../../config.js', () => ({
     NODE_ENV: 'test',
     REDIS_URL: 'redis://localhost:6379',
     BSALE_RATE_LIMIT_RPS: 10,
+    TOKEN_ENCRYPTION_KEY: 'test_token_encryption_key_minimum_32_chars',
   },
 }));
 

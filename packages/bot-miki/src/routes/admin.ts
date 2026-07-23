@@ -3,6 +3,7 @@ import type { Queue } from 'bullmq';
 import { db } from '../infrastructure/database.js';
 import { config } from '../config.js';
 import type { SyncJobData } from '../workers/sync-worker.js';
+import { encryptToken } from '../infrastructure/token-crypto.js';
 import crypto from 'node:crypto';
 
 function generateApiKey(): string {
@@ -291,7 +292,8 @@ export async function adminRoute(app: FastifyInstance, opts: { queue: Queue<Sync
           cms_type:             body.cmsType,
           cms_url:              body.cmsUrl,
           bsale_integration_id: body.bsaleIntegrationId ?? null,
-          bsale_access_token:   body.bsaleAccessToken ?? null,
+          // #107: cifrado en reposo — nunca texto plano en la BD
+          bsale_access_token:   body.bsaleAccessToken ? encryptToken(body.bsaleAccessToken) : null,
           bsale_price_list_id:  body.bsalePriceListId ?? null,
           bsale_office_id:      body.bsaleOfficeId ?? null,
         })
@@ -362,7 +364,8 @@ export async function adminRoute(app: FastifyInstance, opts: { queue: Queue<Sync
 
       const updates: Record<string, unknown> = {};
       if (body.bsaleIntegrationId !== undefined) updates.bsale_integration_id = body.bsaleIntegrationId;
-      if (body.bsaleAccessToken   !== undefined) updates.bsale_access_token   = body.bsaleAccessToken;
+      // #107: cifrado en reposo — nunca texto plano en la BD
+      if (body.bsaleAccessToken   !== undefined) updates.bsale_access_token   = encryptToken(body.bsaleAccessToken);
       if (body.bsalePriceListId   !== undefined) updates.bsale_price_list_id  = body.bsalePriceListId;
       if (body.bsaleOfficeId      !== undefined) updates.bsale_office_id      = body.bsaleOfficeId;
       if (body.cmsWebhookSecret   !== undefined) updates.cms_webhook_secret   = body.cmsWebhookSecret;

@@ -4,6 +4,7 @@ import { config } from '../config.js';
 import { db } from '../infrastructure/database.js';
 import { BsaleHttpClient, BsaleApiError } from '../infrastructure/bsale-http-client.js';
 import { resolveWebhookResource } from '../adapters/bsale-webhook-resolver.js';
+import { decryptToken } from '../infrastructure/token-crypto.js';
 
 /**
  * #93: fallo NO reintentable (permanente). El sync no puede tener éxito por más que se
@@ -77,7 +78,8 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
     return;
   }
 
-  const bsale = new BsaleHttpClient(store.bsale_access_token);
+  // #107: bsale_access_token esta cifrado en reposo (AES-256-GCM)
+  const bsale = new BsaleHttpClient(decryptToken(store.bsale_access_token));
 
   // #93: reflejar el estado REAL del sync en el store (antes marcaba 'success' siempre).
   let syncStatus: 'success' | 'failed' = 'success';
