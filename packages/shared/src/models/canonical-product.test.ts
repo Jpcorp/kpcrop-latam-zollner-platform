@@ -95,6 +95,16 @@ describe('CanonicalProductSchema — casos validos', () => {
     expect(result.success).toBe(true);
   });
 
+  // #36: sin allowNegative, un stock negativo es dato corrupto de Bsale, no
+  // un caso de negocio valido (antes de este fix, StockSchema no lo rechazaba)
+  it('rechaza stock negativo cuando allowNegative es false', () => {
+    const result = CanonicalProductSchema.safeParse({
+      ...minimalProduct,
+      stock: { quantity: -5, allowNegative: false },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('acepta price.priceListId opcional', () => {
     const result = CanonicalProductSchema.safeParse({
       ...minimalProduct,
@@ -192,12 +202,38 @@ describe('CanonicalProductSchema — tipos invalidos', () => {
     expect(result.success).toBe(false);
   });
 
+  // #36: net debe ser positivo (no solo no-negativo) — precio 0 es dato corrupto
+  it('rechaza price.net igual a cero', () => {
+    const result = CanonicalProductSchema.safeParse({
+      ...minimalProduct,
+      price: { ...validPrice, net: 0 },
+    });
+    expect(result.success).toBe(false);
+  });
+
   it('rechaza price.gross negativo', () => {
     const result = CanonicalProductSchema.safeParse({
       ...minimalProduct,
       price: { ...validPrice, gross: -100 },
     });
     expect(result.success).toBe(false);
+  });
+
+  // #36: gross (con impuesto) nunca puede ser menor que net (sin impuesto)
+  it('rechaza price.gross menor que price.net', () => {
+    const result = CanonicalProductSchema.safeParse({
+      ...minimalProduct,
+      price: { ...validPrice, net: 10000, gross: 9000 },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('acepta price.gross igual a price.net (tasa 0, exento)', () => {
+    const result = CanonicalProductSchema.safeParse({
+      ...minimalProduct,
+      price: { ...validPrice, net: 10000, gross: 10000, taxRate: 0 },
+    });
+    expect(result.success).toBe(true);
   });
 
   it('rechaza taxRate mayor a 1', () => {
