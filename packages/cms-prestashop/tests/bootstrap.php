@@ -6,6 +6,7 @@
 
 define('_PS_VERSION_', '1.7.8.0');
 define('_DB_PREFIX_', 'ps_');
+define('_PS_MODULE_DIR_', __DIR__ . '/../../');
 // #115: llave de prueba para TokenCipher — nunca la real de produccion.
 define('_COOKIE_KEY_', 'clave_de_prueba_para_phpunit_no_es_la_real_1234567890');
 
@@ -200,6 +201,90 @@ class Tools
     {
         $slug = strtolower(trim(preg_replace('/[^a-zA-Z0-9]+/', '-', $name), '-'));
         return $slug !== '' ? $slug : 'produit';
+    }
+}
+
+// #128: stubs para OrderDocumentService::notifyDocumentEmitted()
+
+class Order
+{
+    public $id;
+    public $id_customer = 0;
+    public $id_lang = 1;
+
+    /** @var array<int, array{id_customer?:int, id_lang?:int}> configurar antes de instanciar */
+    public static array $fixtures = [];
+
+    public function __construct(int $id = 0)
+    {
+        // Sin fixture registrada = el pedido no existe (Order no cargado) —
+        // simetrico a PrestaShop real (Order($id) con $id inexistente en BD).
+        if ($id && isset(self::$fixtures[$id])) {
+            $this->id           = $id;
+            $this->id_customer  = self::$fixtures[$id]['id_customer'] ?? 999;
+            $this->id_lang      = self::$fixtures[$id]['id_lang'] ?? 1;
+        } else {
+            $this->id = null;
+        }
+    }
+
+    public static function reset(): void
+    {
+        self::$fixtures = [];
+    }
+}
+
+class Customer
+{
+    public $id;
+    public $email = '';
+    public $firstname = '';
+    public $lastname = '';
+
+    /** @var array<int, array{email?:string, firstname?:string, lastname?:string}> */
+    public static array $fixtures = [];
+
+    public function __construct(int $id = 0)
+    {
+        $this->id = $id ?: null;
+        $f = self::$fixtures[$id] ?? ($id ? ['email' => 'cliente@test.cl', 'firstname' => 'Juan', 'lastname' => 'Perez'] : null);
+        if ($f !== null) {
+            $this->email     = $f['email'] ?? '';
+            $this->firstname = $f['firstname'] ?? '';
+            $this->lastname  = $f['lastname'] ?? '';
+        }
+    }
+
+    public static function reset(): void
+    {
+        self::$fixtures = [];
+    }
+}
+
+class Validate
+{
+    public static function isLoadedObject($object): bool
+    {
+        return isset($object->id) && (int)$object->id > 0;
+    }
+}
+
+class Mail
+{
+    /** @var array<int, array> */
+    public static array $calls = [];
+    public static bool $returnValue = true;
+
+    public static function Send(...$args): bool
+    {
+        self::$calls[] = $args;
+        return self::$returnValue;
+    }
+
+    public static function reset(): void
+    {
+        self::$calls = [];
+        self::$returnValue = true;
     }
 }
 

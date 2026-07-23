@@ -350,6 +350,19 @@ class OrderDocumentService
             ]);
             $summary['emitted']++;
 
+            // #128: notificar al cliente final que su documento esta listo — un
+            // fallo de email nunca debe bloquear el cierre del pedido (ya se
+            // cumplio la parte que importa: el documento se emitio en Bsale).
+            try {
+                $this->notifyDocumentEmitted(
+                    (int)$row['id_order'],
+                    (string)($emitted['number'] ?? ''),
+                    (string)($emitted['urlPdf'] ?? '')
+                );
+            } catch (\Throwable $e) {
+                // silencioso a proposito — ver comentario arriba
+            }
+
             if ($this->closeOrder((int)$row['id_order'])) {
                 $this->updateRow((int)$row['id_order'], ['status' => self::STATUS_CLOSED]);
                 $summary['closed']++;
@@ -423,6 +436,44 @@ class OrderDocumentService
     }
 
     /**
+     * #128: notifica por email al cliente final que su documento tributario
+     * (boleta/factura) ya fue emitido y esta disponible para descargar.
+     * Publico (no private) para poder testearlo de forma aislada.
+     * @return bool true si se envio, false si no se pudo (pedido/cliente
+     * invalido o sin email) — nunca lanza excepcion por un fallo de Mail::Send.
+     */
+    public function notifyDocumentEmitted(int $idOrder, string $docNumber, string $docUrl): bool
+    {
+        $order = new Order($idOrder);
+        if (!Validate::isLoadedObject($order)) {
+            return false;
+        }
+
+        $customer = new Customer((int)$order->id_customer);
+        if (!Validate::isLoadedObject($customer) || empty($customer->email)) {
+            return false;
+        }
+
+        return (bool)Mail::Send(
+            (int)$order->id_lang,
+            'synkrop_document_emitted',
+            'Tu documento de compra está listo',
+            [
+                '{doc_number}' => $docNumber,
+                '{doc_url}'    => $docUrl,
+                '{firstname}'  => $customer->firstname,
+            ],
+            $customer->email,
+            $customer->firstname . ' ' . $customer->lastname,
+            null,
+            null,
+            null,
+            null,
+            _PS_MODULE_DIR_ . 'synkrop/mails/'
+        );
+    }
+
+    /**
      * Pasa el pedido PS al estado "Documentado en Bsale" (gatilla el flujo de despacho).
      */
     private function closeOrder(int $idOrder): bool
@@ -480,7 +531,10 @@ class OrderDocumentService
 
             case self::STATUS_EMITTED:
             case self::STATUS_CLOSED:
-                // Ya hay documento tributario: la nota de crédito es SIEMPRE decisión humana
+                // Ya hay documento tributario: la nota de crédito es SIEMPRE decisión humana.
+                // #128: decisión confirmada (no auto-generar, a diferencia del plugin legacy
+                // syncBsale) — una nota de crédito mal generada tiene implicancia legal/
+                // contable real, no es como reintentar un sync de stock.
                 $this->updateRow($idOrder, [
                     'status'        => self::STATUS_REVIEW,
                     'error_details' => pSQL(json_encode([

@@ -13,6 +13,15 @@ class LicenseClient
     private $daemonUrl;
     private $apiKey;
 
+    /**
+     * #128: horas de gracia usando el ultimo JWT cacheado (aunque haya
+     * expirado) cuando bot-miki no responde (conexion o 5xx propio -- NO 402,
+     * que es licencia inactiva, un caso distinto ya manejado sin gracia).
+     * Mismo principio que el modo degradado de #127 pero para indisponibilidad
+     * del servicio, no del negocio del cliente por falta de pago.
+     */
+    private const BOT_MIKI_DOWN_GRACE_HOURS = 24;
+
     public function __construct(string $daemonUrl, string $apiKey)
     {
         $this->daemonUrl = rtrim($daemonUrl, '/');
@@ -88,11 +97,19 @@ class LicenseClient
         curl_close($ch);
 
         if ($curlErrno !== 0) {
-            throw new LicenseException("No se pudo conectar al servidor de licencias: {$curlError} (errno {$curlErrno})", 0);
+            return $this->staleJwtOrThrow(
+                new LicenseException("No se pudo conectar al servidor de licencias: {$curlError} (errno {$curlErrno})", 0)
+            );
         }
 
         if ($httpCode === 402) {
             throw new LicenseException('Licencia expirada o suspendida. Renueva en kpcrop.com/billing', 402);
+        }
+
+        if ($httpCode >= 500) {
+            return $this->staleJwtOrThrow(
+                new LicenseException("Error al validar licencia (HTTP {$httpCode})", $httpCode)
+            );
         }
 
         if ($httpCode !== 200) {
@@ -115,6 +132,42 @@ class LicenseClient
         );
 
         return $data['token'];
+    }
+
+    /**
+     * #128: si hay un JWT cacheado (aunque haya expirado) dentro de la ventana
+     * de gracia, lo devuelve en vez de lanzar — evita que una caida de
+     * bot-miki bloquee TODO el sync del cliente. Si no hay cache o ya se paso
+     * la ventana, relanza la excepcion original.
+     */
+    private function staleJwtOrThrow(LicenseException $original): string
+    {
+        $config = Db::getInstance()->getRow(
+            'SELECT license_jwt, license_jwt_expires FROM `' . _DB_PREFIX_ . 'synkrop_config`
+             WHERE id_shop = ' . (int)Context::getContext()->shop->id
+        );
+
+        if (!$config || empty($config['license_jwt']) || empty($config['license_jwt_expires'])) {
+            throw $original;
+        }
+
+        if (!self::isWithinStaleJwtGrace($config['license_jwt_expires'])) {
+            throw $original;
+        }
+
+        return $config['license_jwt'];
+    }
+
+    /**
+     * Logica pura (sin BD/red) de la ventana de gracia — separada para poder
+     * testearla sin mockear curl. Devuelve true si $expiresAtSql (formato
+     * "YYYY-MM-DD HH:MM:SS") todavia no expiro, o expiro hace menos de
+     * BOT_MIKI_DOWN_GRACE_HOURS.
+     */
+    public static function isWithinStaleJwtGrace(string $expiresAtSql): bool
+    {
+        $expiredSecondsAgo = time() - strtotime($expiresAtSql);
+        return $expiredSecondsAgo <= self::BOT_MIKI_DOWN_GRACE_HOURS * 3600;
     }
 
     /**

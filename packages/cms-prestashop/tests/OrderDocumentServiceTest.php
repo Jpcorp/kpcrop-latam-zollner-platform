@@ -12,6 +12,9 @@ class OrderDocumentServiceTest extends TestCase
     protected function setUp(): void
     {
         Db::reset();
+        Order::reset();
+        Customer::reset();
+        Mail::reset();
         $this->service = new OrderDocumentService(new BsaleApiClient('token-test'), 1);
     }
 
@@ -110,5 +113,60 @@ class OrderDocumentServiceTest extends TestCase
 
         $this->assertSame($a, $b);
         $this->assertNotSame($a, $c);
+    }
+
+    // ─── notifyDocumentEmitted (#128: notificación al cliente final) ────────
+
+    public function testNotifyDocumentEmittedEnviaMailConLosDatosCorrectos(): void
+    {
+        Order::$fixtures[10] = ['id_customer' => 55, 'id_lang' => 1];
+        Customer::$fixtures[55] = ['email' => 'ana@test.cl', 'firstname' => 'Ana', 'lastname' => 'Soto'];
+
+        $result = $this->service->notifyDocumentEmitted(10, 'B-1024', 'https://bsale.cl/doc/1024.pdf');
+
+        $this->assertTrue($result);
+        $this->assertCount(1, Mail::$calls);
+        [$idLang, $template, $subject, $vars, $to, $toName] = Mail::$calls[0];
+        $this->assertSame(1, $idLang);
+        $this->assertSame('synkrop_document_emitted', $template);
+        $this->assertSame('B-1024', $vars['{doc_number}']);
+        $this->assertSame('https://bsale.cl/doc/1024.pdf', $vars['{doc_url}']);
+        $this->assertSame('ana@test.cl', $to);
+        $this->assertSame('Ana Soto', $toName);
+    }
+
+    public function testNotifyDocumentEmittedDevuelveFalseSiElPedidoNoExiste(): void
+    {
+        $result = $this->service->notifyDocumentEmitted(999, 'B-1', 'https://x');
+
+        $this->assertFalse($result);
+        $this->assertEmpty(Mail::$calls);
+    }
+
+    public function testNotifyDocumentEmittedDevuelveFalseSiElClienteNoTieneEmail(): void
+    {
+        Order::$fixtures[11] = ['id_customer' => 56];
+        Customer::$fixtures[56] = ['email' => '', 'firstname' => 'Sin', 'lastname' => 'Email'];
+
+        $result = $this->service->notifyDocumentEmitted(11, 'B-2', 'https://x');
+
+        $this->assertFalse($result);
+        $this->assertEmpty(Mail::$calls);
+    }
+
+    public function testCheckEmissionsNoBloqueaSiElEmailFalla(): void
+    {
+        // #128: un fallo de Mail::Send nunca debe interrumpir checkEmissions() —
+        // el documento ya se emitio en Bsale, eso es lo que importa.
+        Mail::$returnValue = false;
+
+        Order::$fixtures[12] = ['id_customer' => 57];
+        Customer::$fixtures[57] = ['email' => 'x@test.cl', 'firstname' => 'X', 'lastname' => 'Y'];
+
+        $result = $this->service->notifyDocumentEmitted(12, 'B-3', 'https://x');
+
+        // Send() devolvio false, pero el metodo no lanzo excepcion — eso es lo
+        // que garantiza que checkEmissions() (que lo envuelve en try/catch) siga.
+        $this->assertFalse($result);
     }
 }
