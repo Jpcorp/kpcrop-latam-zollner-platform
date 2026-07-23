@@ -224,66 +224,83 @@ class SynkropService
             throw new RuntimeException('Variante sin codigo SKU — no se puede sincronizar');
         }
 
-        // Buscar combinacion existente por SKU (campo reference en PrestaShop)
-        $idProduct = $this->findProductByReference($code);
-
-        $isNew = ($idProduct === null);
-        if ($isNew) {
-            $psProduct = new Product();
-            $psProduct->reference = $code;
-        } else {
-            $psProduct = new Product($idProduct, false);
+        // #115: dos webhooks concurrentes para el mismo SKU nuevo (ej.
+        // topic=product y topic=variant casi simultaneos) podian ver ambos
+        // "no existe" en findProductByReference() y crear dos productos con
+        // la misma referencia — PrestaShop no exige UNIQUE en ps_product.reference
+        // (y no se toca esa tabla core para agregarlo: blast radius de toda la
+        // tienda, no solo synkrop). Lock nombrado de MySQL, scopeado al SKU:
+        // serializa el check-then-create entre procesos PHP concurrentes.
+        $lockName = 'synkrop_upsert_' . md5($code . '_' . $this->idShop);
+        $gotLock  = (bool)Db::getInstance()->getValue("SELECT GET_LOCK('" . pSQL($lockName) . "', 10)");
+        if (!$gotLock) {
+            throw new RuntimeException("No se pudo sincronizar SKU {$code}: timeout esperando a otro proceso");
         }
 
-        $defaultLangId = (int)Configuration::get('PS_LANG_DEFAULT');
+        try {
+            // Buscar combinacion existente por SKU (campo reference en PrestaShop)
+            $idProduct = $this->findProductByReference($code);
 
-        // PS valida nombres con Validate::isCatalogName() que rechaza <>{} y caracteres de control.
-        $name = strip_tags(html_entity_decode($product['name'] ?? '', ENT_QUOTES, 'UTF-8'));
-        // PS valida con /^[^<>;=#{}]*$/u — eliminar todos los caracteres que rechaza isCatalogName
-        $name = trim(preg_replace('/[<>{};=#\\x00-\\x1F]/u', '', $name));
-        $name = substr($name, 0, 128);
-        if (empty($name)) {
-            $name = $code; // fallback al SKU si el nombre viene vacio
+            $isNew = ($idProduct === null);
+            if ($isNew) {
+                $psProduct = new Product();
+                $psProduct->reference = $code;
+            } else {
+                $psProduct = new Product($idProduct, false);
+            }
+
+            $defaultLangId = (int)Configuration::get('PS_LANG_DEFAULT');
+
+            // PS valida nombres con Validate::isCatalogName() que rechaza <>{} y caracteres de control.
+            $name = strip_tags(html_entity_decode($product['name'] ?? '', ENT_QUOTES, 'UTF-8'));
+            // PS valida con /^[^<>;=#{}]*$/u — eliminar todos los caracteres que rechaza isCatalogName
+            $name = trim(preg_replace('/[<>{};=#\\x00-\\x1F]/u', '', $name));
+            $name = substr($name, 0, 128);
+            if (empty($name)) {
+                $name = $code; // fallback al SKU si el nombre viene vacio
+            }
+
+            $psProduct->name[$defaultLangId]        = $name;
+            $psProduct->description[$defaultLangId] = strip_tags($product['description'] ?? '');
+            // Bsale devuelve precio NETO — PrestaShop trabaja con precio neto y calcula IVA
+            $psProduct->price  = (float)($variant['cost'] ?? $product['price'] ?? 0);
+            // Productos nuevos siempre inactivos: el admin debe revisar precio y datos antes de publicar.
+            // Productos existentes siguen el estado de Bsale (state=0 → activo, otros → inactivo).
+            $psProduct->active = $isNew ? 0 : ((int)$product['state'] === 0 ? 1 : 0);
+
+            if ($isNew) {
+                // Campos obligatorios para Product::add() en PS 1.7
+                $psProduct->id_category_default  = (int)Configuration::get('PS_HOME_CATEGORY');
+                $psProduct->link_rewrite[$defaultLangId] = Tools::link_rewrite($name);
+                $psProduct->id_tax_rules_group   = (int)Configuration::get('PS_TAX_DISPLAY_PREFERENCE') ?: 0;
+                $psProduct->minimal_quantity     = 1;
+                $psProduct->show_price           = 1;
+                $psProduct->is_virtual           = 0;
+                $psProduct->state                = 1;
+                $psProduct->visibility           = 'both';
+                $psProduct->available_for_order  = 1;
+                $psProduct->condition            = 'new';
+
+                $psProduct->add();
+
+                // Asociar a la categoria home (requerido para que aparezca en catálogo)
+                $psProduct->addToCategories([(int)Configuration::get('PS_HOME_CATEGORY')]);
+            } else {
+                $psProduct->update();
+            }
+
+            if (!$psProduct->id) {
+                throw new RuntimeException('No se pudo guardar producto: ' . $code);
+            }
+
+            // Actualizar stock directamente en DB para evitar disparar hooks de ps_emailalerts
+            $this->setStockDirect($psProduct->id, (int)($variant['quantity'] ?? 0));
+
+            // Registrar mapeo Bsale ↔ PrestaShop para syncs futuros
+            $this->saveProductMap($psProduct->id, $variant);
+        } finally {
+            Db::getInstance()->execute("SELECT RELEASE_LOCK('" . pSQL($lockName) . "')");
         }
-
-        $psProduct->name[$defaultLangId]        = $name;
-        $psProduct->description[$defaultLangId] = strip_tags($product['description'] ?? '');
-        // Bsale devuelve precio NETO — PrestaShop trabaja con precio neto y calcula IVA
-        $psProduct->price  = (float)($variant['cost'] ?? $product['price'] ?? 0);
-        // Productos nuevos siempre inactivos: el admin debe revisar precio y datos antes de publicar.
-        // Productos existentes siguen el estado de Bsale (state=0 → activo, otros → inactivo).
-        $psProduct->active = $isNew ? 0 : ((int)$product['state'] === 0 ? 1 : 0);
-
-        if ($isNew) {
-            // Campos obligatorios para Product::add() en PS 1.7
-            $psProduct->id_category_default  = (int)Configuration::get('PS_HOME_CATEGORY');
-            $psProduct->link_rewrite[$defaultLangId] = Tools::link_rewrite($name);
-            $psProduct->id_tax_rules_group   = (int)Configuration::get('PS_TAX_DISPLAY_PREFERENCE') ?: 0;
-            $psProduct->minimal_quantity     = 1;
-            $psProduct->show_price           = 1;
-            $psProduct->is_virtual           = 0;
-            $psProduct->state                = 1;
-            $psProduct->visibility           = 'both';
-            $psProduct->available_for_order  = 1;
-            $psProduct->condition            = 'new';
-
-            $psProduct->add();
-
-            // Asociar a la categoria home (requerido para que aparezca en catálogo)
-            $psProduct->addToCategories([(int)Configuration::get('PS_HOME_CATEGORY')]);
-        } else {
-            $psProduct->update();
-        }
-
-        if (!$psProduct->id) {
-            throw new RuntimeException('No se pudo guardar producto: ' . $code);
-        }
-
-        // Actualizar stock directamente en DB para evitar disparar hooks de ps_emailalerts
-        $this->setStockDirect($psProduct->id, (int)($variant['quantity'] ?? 0));
-
-        // Registrar mapeo Bsale ↔ PrestaShop para syncs futuros
-        $this->saveProductMap($psProduct->id, $variant);
     }
 
     private function setStockDirect(int $idProduct, int $quantity)    {

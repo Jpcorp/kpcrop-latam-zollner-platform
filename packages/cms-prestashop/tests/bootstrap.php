@@ -44,6 +44,13 @@ class Db
                 return $value instanceof \Closure ? $value($sql) : $value;
             }
         }
+        // #115: GET_LOCK() (lock de sincronizacion en upsertVariant) tiene
+        // exito por default en los tests — configurar
+        // $db->queryResults['GET_LOCK'] = 0 explicitamente para simular que
+        // otro proceso ya tiene el lock.
+        if (strpos($sql, 'GET_LOCK') !== false) {
+            return 1;
+        }
         return null;
     }
 

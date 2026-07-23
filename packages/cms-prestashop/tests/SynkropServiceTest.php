@@ -478,4 +478,47 @@ class SynkropServiceTest extends TestCase
         $result->failed  = 4;
         $this->assertEquals('failed', $result->status());
     }
+
+    // ─── upsertVariant: lock de sincronizacion por SKU (#115) ─────────────────
+
+    public function test_syncSingle_variant_libera_el_lock_al_terminar(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['`ps_product`'] = null; // producto nuevo
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('variant', [
+            'id' => 1001, 'code' => 'SKU-LOCK-1', 'quantity' => 5, 'state' => 0,
+        ]);
+
+        $this->assertEquals(1, $result->updated);
+
+        $releaseCalls = array_values(array_filter(
+            $db->getCalls('execute'),
+            fn($c) => strpos($c['sql'], 'RELEASE_LOCK') !== false
+        ));
+        $this->assertNotEmpty($releaseCalls, 'Debe liberar el lock al terminar');
+    }
+
+    public function test_syncSingle_variant_falla_si_no_consigue_el_lock(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['GET_LOCK'] = 0; // otro proceso ya tiene el lock de este SKU
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        try {
+            $service->syncSingle('variant', [
+                'id' => 1001, 'code' => 'SKU-LOCK-2', 'quantity' => 5, 'state' => 0,
+            ]);
+            $this->fail('Deberia haber lanzado RuntimeException por no conseguir el lock');
+        } catch (RuntimeException $e) {
+            $this->assertMatchesRegularExpression('/no se pudo sincronizar/i', $e->getMessage());
+        }
+
+        $this->assertEmpty(Product::$added, 'No debe crear el producto si no consiguio el lock');
+    }
 }
