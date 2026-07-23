@@ -6,7 +6,15 @@
  */
 
 if (!defined('_PS_VERSION_')) {
-    define('_PS_ADMIN_DIR_', dirname(__FILE__, 3) . '/fg0qvkmjnpbs5wl5');
+    // #115: configurable via variable de entorno del servidor
+    // (SYNKROP_PS_ADMIN_DIR) para no depender de un valor fijo en el repo.
+    // El fallback preserva el nombre actual de produccion (strainmachine.com)
+    // para que este cambio sea 100% compatible sin tocar nada del lado del
+    // servidor todavia. Pendiente (accion manual, fuera de este commit):
+    // setear SYNKROP_PS_ADMIN_DIR en la config de PHP/Apache de produccion
+    // con el nombre ofuscado real y, recien ahi, sacar el fallback del repo.
+    $psAdminDir = getenv('SYNKROP_PS_ADMIN_DIR') ?: 'fg0qvkmjnpbs5wl5';
+    define('_PS_ADMIN_DIR_', dirname(__FILE__, 3) . '/' . $psAdminDir);
     $_SERVER['HTTP_HOST']   = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $_SERVER['REQUEST_URI'] = '/';
     require_once dirname(__FILE__, 3) . '/config/config.inc.php';
