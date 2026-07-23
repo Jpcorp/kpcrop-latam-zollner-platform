@@ -75,12 +75,18 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
         return reply.code(400).send({ error: 'invalid_resource' });
       }
 
-      // Buscar tenant por cpnId de Bsale — join con licenses para obtener el tenant_id string
+      // Buscar tenant por cpnId de Bsale — join con licenses para obtener el tenant_id string.
+      // #127: filtra por status='active' — con licencia vencida/suspendida el
+      // auto-sync (webhook) queda apagado a proposito (el modo degradado solo
+      // permite el sync MANUAL desde el panel, con limite de frecuencia). Antes
+      // encolaba igual y el CMS recien rechazaba en syncSingle() — desperdiciaba
+      // rate-limit de Bsale y un ciclo de worker en trabajo que se iba a descartar.
       const store = await db
         .selectFrom('tenant_stores as s')
         .innerJoin('licenses as l', 'l.id', 's.license_id')
         .select(['s.id', 's.license_id', 'l.tenant_id'])
         .where('s.bsale_integration_id', '=', payload.cpnId)
+        .where('l.status', '=', 'active')
         .executeTakeFirst();
 
       if (!store) {

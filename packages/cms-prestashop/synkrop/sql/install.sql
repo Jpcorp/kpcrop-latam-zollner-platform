@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     `last_sync_at`          DATETIME DEFAULT NULL,
     `last_sync_status`      VARCHAR(20) DEFAULT NULL,
     `last_sync_count`       INT NOT NULL DEFAULT 0,
+    -- #127: ultima vez que se uso el sync manual en modo degradado (licencia
+    -- vencida/suspendida) — limita la frecuencia para que no sea sustituto
+    -- gratuito del auto-sync mientras incentiva renovar.
+    `degraded_manual_sync_at` DATETIME DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_shop` (`id_shop`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

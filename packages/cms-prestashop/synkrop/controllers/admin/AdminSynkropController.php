@@ -39,6 +39,23 @@ class AdminSynkropController extends ModuleAdminController
 
         $isConfigured = !empty($config['bsale_api_token']) && !empty($config['daemon_api_key']);
 
+        // #127: banner persistente de estado de licencia — no bloquea el panel
+        // (siempre visible, historial y config accesibles), solo informa. Si no
+        // se puede determinar el estado (p.ej. bot-miki caido, ver #128), no se
+        // muestra nada: no es lo mismo indisponibilidad del servicio que
+        // licencia vencida, y no hay que alarmar por una caida transitoria.
+        $licenseBanner = null;
+        if ($isConfigured) {
+            try {
+                $license = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']);
+                $license->getToken();
+            } catch (LicenseException $e) {
+                if ($e->isExpired()) {
+                    $licenseBanner = $e->getMessage();
+                }
+            }
+        }
+
         $shopTz = new DateTimeZone(Configuration::get('PS_TIMEZONE') ?: 'UTC');
         $utcTz  = new DateTimeZone('UTC');
         foreach ($logs as &$log) {
@@ -84,6 +101,7 @@ class AdminSynkropController extends ModuleAdminController
 
         $this->context->smarty->assign([
             'is_configured'  => $isConfigured,
+            'license_banner' => $licenseBanner,
             'sync_logs'      => $logs,
             'ajax_url'       => $this->context->link->getAdminLink('AdminSynkrop') . '&ajax=1',
             'orders_enabled' => $ordersEnabled,
@@ -108,7 +126,10 @@ class AdminSynkropController extends ModuleAdminController
 
         try {
             $service = $this->buildSyncService();
-            $result  = $service->sync($entityType);
+            // #127: syncManual (no sync) — con licencia vencida/suspendida permite
+            // seguir operando en modo degradado (limitado a 1x/24h) en vez de
+            // bloquear duro; cli/sync.php (cron) sigue usando sync() sin gracia.
+            $result  = $service->syncManual($entityType);
 
             $this->logSync('manual', $entityType, $result);
 

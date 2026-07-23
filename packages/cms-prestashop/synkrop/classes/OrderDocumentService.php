@@ -11,6 +11,15 @@
  * el descuento real ocurre cuando el usuario Bsale emite el documento.
  *
  * Ciclo: pending → generated → emitted → closed  (+ error / review / cancelled)
+ *
+ * #127: a proposito, esta clase NO recibe LicenseClient y no valida licencia en
+ * ningun metodo. Es una decision de diseno, no un descuido: la emision de
+ * boleta/factura es parte de la operacion legal/comercial real del cliente, no
+ * un "extra" — si se corta junto con el sync de catalogo cuando la licencia
+ * vence, el negocio del cliente queda sin poder emitir sus documentos
+ * tributarios, que es exactamente lo que el modo degradado busca evitar. Ver
+ * la politica completa en el issue #127. No agregar un chequeo de licencia
+ * aca sin revisar esa decision primero.
  */
 
 if (!defined('_PS_VERSION_')) {

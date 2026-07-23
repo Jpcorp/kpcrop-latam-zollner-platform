@@ -175,18 +175,85 @@ class SynkropService
     }
 
     /**
-     * Punto de entrada principal. Devuelve el resultado del sync.
+     * #127: horas entre syncs manuales permitidos en modo degradado (licencia
+     * vencida/suspendida) — el negocio del cliente no se detiene, pero no es
+     * un sustituto gratuito del auto-sync en tiempo real.
+     */
+    private const DEGRADED_MANUAL_SYNC_HOURS = 24;
+
+    /**
+     * Punto de entrada principal (bot-miki/webhook y cron via cli/sync.php).
+     * Exige licencia activa sin excepcion — cron es sync automatico, y el
+     * modo degradado de #127 solo aplica al boton manual del panel
+     * (ver syncManual()), o dejaria de ser un incentivo real para renovar.
      */
     public function sync(string $entityType = 'products'): SyncResult
     {
         $this->license->getToken(); // Lanza LicenseException si no es valida
+        return $this->dispatchSync($entityType);
+    }
 
+    /**
+     * #127: variante de sync() para el boton "Sync ahora" del panel de admin.
+     * Con licencia activa se comporta igual que sync(). Con licencia vencida
+     * o suspendida (no con otros errores, p.ej. bot-miki caido — ver #128),
+     * permite el sync de todos modos pero limitado a 1 vez cada
+     * DEGRADED_MANUAL_SYNC_HOURS, para que el cliente pueda seguir operando
+     * sin que el modo degradado reemplace gratis al auto-sync.
+     */
+    public function syncManual(string $entityType = 'products'): SyncResult
+    {
+        try {
+            $this->license->getToken();
+        } catch (LicenseException $e) {
+            if (!$e->isExpired()) {
+                throw $e; // conexion/formato invalido -> mismo comportamiento que antes
+            }
+            $this->assertDegradedManualSyncAllowed();
+        }
+
+        return $this->dispatchSync($entityType);
+    }
+
+    private function dispatchSync(string $entityType): SyncResult
+    {
         switch ($entityType) {
             case 'products': return $this->syncProducts();
             case 'stock':    return $this->syncStock();
             case 'prices':   return $this->syncPrices();
             default:         throw new InvalidArgumentException("Entidad no soportada: {$entityType}");
         }
+    }
+
+    /**
+     * @throws LicenseException si ya se uso el sync manual degradado hace
+     * menos de DEGRADED_MANUAL_SYNC_HOURS.
+     */
+    private function assertDegradedManualSyncAllowed(): void
+    {
+        $lastRaw = Db::getInstance()->getValue(
+            'SELECT degraded_manual_sync_at FROM `' . _DB_PREFIX_ . 'synkrop_config`
+             WHERE id_shop = ' . $this->idShop
+        );
+
+        if ($lastRaw) {
+            $elapsedHours = (strtotime(gmdate('Y-m-d H:i:s')) - strtotime($lastRaw)) / 3600;
+            if ($elapsedHours < self::DEGRADED_MANUAL_SYNC_HOURS) {
+                $nextAvailable = gmdate('Y-m-d H:i', strtotime($lastRaw) + self::DEGRADED_MANUAL_SYNC_HOURS * 3600);
+                throw new LicenseException(
+                    'Licencia vencida o suspendida — el sync manual está limitado a 1 vez cada ' .
+                    self::DEGRADED_MANUAL_SYNC_HOURS . "h mientras tanto. Próximo disponible: {$nextAvailable} UTC. " .
+                    'Renueva en kpcrop.com/billing para restablecer el sync automático.',
+                    402
+                );
+            }
+        }
+
+        Db::getInstance()->update(
+            'synkrop_config',
+            ['degraded_manual_sync_at' => gmdate('Y-m-d H:i:s')],
+            'id_shop = ' . $this->idShop
+        );
     }
 
     private function syncProducts(): SyncResult

@@ -4,9 +4,10 @@ import type { Queue } from 'bullmq';
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
-const { mockExecuteTakeFirst, mockQueueAdd } = vi.hoisted(() => ({
+const { mockExecuteTakeFirst, mockQueueAdd, mockWhere } = vi.hoisted(() => ({
   mockExecuteTakeFirst: vi.fn(),
   mockQueueAdd: vi.fn().mockResolvedValue(undefined),
+  mockWhere: vi.fn(),
 }));
 
 vi.mock('../../config.js', () => ({
@@ -29,7 +30,7 @@ vi.mock('../../infrastructure/database.js', () => {
   chain['selectAll'] = () => chain;
   chain['innerJoin'] = () => chain; // #105: webhooks.ts hace join con licenses
   chain['select'] = () => chain;    // #105: select explicito de columnas tras el join
-  chain['where'] = () => chain;
+  chain['where'] = mockWhere.mockImplementation(() => chain);
   return { db: { selectFrom: () => chain, insertInto: () => chain, values: () => chain, execute: vi.fn().mockResolvedValue([]) } };
 });
 
@@ -235,6 +236,45 @@ describe('POST /v1/webhooks/bsale', () => {
     const [, , jobOpts] = mockQueueAdd.mock.calls[0];
     expect(jobOpts.removeOnComplete).toEqual({ age: 86_400 });
     expect(jobOpts.removeOnFail).toEqual({ age: 604_800 });
+    await app.close();
+  });
+
+  it('#127: filtra por status=active de la licencia antes de encolar', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-5',
+      license_id: 'lic-uuid-5',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 5',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    expect(mockWhere).toHaveBeenCalledWith('l.status', '=', 'active');
+    await app.close();
+  });
+
+  it('#127: con licencia suspendida (query no devuelve store) no encola — igual que tenant desconocido', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce(undefined);
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockQueueAdd).not.toHaveBeenCalled();
     await app.close();
   });
 

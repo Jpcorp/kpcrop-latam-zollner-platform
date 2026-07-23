@@ -15,6 +15,17 @@
 
   {* ── CONFIGURACION / ESTADO ─────────────────────────────────────────── *}
 
+  {if $license_banner}
+  <div class="panel" style="border-left:4px solid #d9534f;margin:0 0 15px">
+    <div class="panel-heading" style="background:#fdf1f0;color:#a94442">
+      <i class="icon-warning-sign"></i>&nbsp;{l s='Licencia vencida o suspendida' mod='synkrop'}
+    </div>
+    <div class="panel-body">
+      <p style="margin-bottom:0">{$license_banner|escape:'html':'UTF-8'}</p>
+    </div>
+  </div>
+  {/if}
+
   {if !$is_configured}
   <div class="panel" style="border-left:4px solid #f0ad4e;margin:0 0 15px">
     <div class="panel-heading" style="background:#fdf8ef;color:#8a6d3b">

@@ -619,4 +619,106 @@ class SynkropServiceTest extends TestCase
 
         $this->assertEquals(1, $result->updated);
     }
+
+    // ─── syncManual: modo degradado por licencia vencida (#127) ──────────────
+
+    public function test_syncManual_con_licencia_activa_se_comporta_como_sync(): void
+    {
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncManual('products');
+
+        $this->assertEquals(0, $result->failed);
+        $db = Db::getInstance();
+        $this->assertEmpty(
+            $db->getCalls('update'),
+            'Con licencia activa no debe tocar degraded_manual_sync_at'
+        );
+    }
+
+    public function test_syncManual_licencia_vencida_sin_uso_previo_permite_sync_y_registra_marca(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['degraded_manual_sync_at'] = null; // nunca se uso el modo degradado
+
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('Licencia vencida o suspendida', 402));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncManual('products');
+
+        $this->assertEquals(0, $result->failed, 'El sync manual degradado debe completarse, no fallar');
+
+        $configUpdates = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'synkrop_config'
+        ));
+        $this->assertCount(1, $configUpdates);
+        $this->assertArrayHasKey('degraded_manual_sync_at', $configUpdates[0]['data']);
+    }
+
+    public function test_syncManual_licencia_vencida_dentro_de_ventana_lanza_LicenseException(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['degraded_manual_sync_at'] = gmdate('Y-m-d H:i:s', time() - 2 * 3600); // hace 2h
+
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('Licencia vencida o suspendida', 402));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $this->expectException(LicenseException::class);
+        $this->expectExceptionMessageMatches('/limitado a 1 vez cada 24h/');
+        $service->syncManual('products');
+    }
+
+    public function test_syncManual_licencia_vencida_fuera_de_ventana_permite_de_nuevo(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['degraded_manual_sync_at'] = gmdate('Y-m-d H:i:s', time() - 25 * 3600); // hace 25h
+
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('Licencia vencida o suspendida', 402));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncManual('products');
+
+        $this->assertEquals(0, $result->failed, 'Pasada la ventana de 24h, debe permitir sync manual de nuevo');
+    }
+
+    public function test_syncManual_error_no_expirado_relanza_sin_gracia(): void
+    {
+        // Un error de conexion/formato (no 402) NO es "licencia vencida" -- no debe
+        // dar gracia (ver #128: indisponibilidad del servicio != licencia inactiva).
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('No se pudo conectar al servidor de licencias', 0));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $this->expectException(LicenseException::class);
+        $this->expectExceptionMessage('No se pudo conectar al servidor de licencias');
+        $service->syncManual('products');
+
+        $db = Db::getInstance();
+        $this->assertEmpty(
+            $db->getCalls('update'),
+            'Un error de conexion no debe tocar degraded_manual_sync_at'
+        );
+    }
 }
