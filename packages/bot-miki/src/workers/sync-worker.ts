@@ -21,7 +21,7 @@ export class PermanentSyncError extends Error {
 export interface SyncJobData {
   storeId: string;
   tenantId: string;
-  syncType: 'webhook' | 'polling';
+  syncType: 'webhook' | 'polling' | 'manual';
   entityType?: string;
   // Solo para jobs de webhook
   resourceUrl?: string;
@@ -91,6 +91,12 @@ async function processJob(job: Job<SyncJobData>): Promise<void> {
   try {
     if (job.data.syncType === 'webhook' && job.data.resourceUrl) {
       await processWebhookEvent(job.data, bsale, job.id ?? undefined);
+    } else if (job.data.syncType === 'manual') {
+      // #55: sync manual disparado por una agencia via /v1/agency/clients/:id/sync
+      // — no hay recurso de Bsale que resolver, se le pide al CMS un sync bulk
+      // directo (mismo payload {entity} que ya soporta webhook.php para
+      // compatibilidad con sync manual).
+      await processManualSync(job.data, job.id ?? undefined);
     } else {
       await processPollingCycle(job.data, bsale, store.id);
     }
@@ -167,6 +173,23 @@ export async function processWebhookEvent(
 
   await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId, body);
   console.log(`[webhook:accepted] jobId=${jobId ?? '-'} store=${data.storeId} — CMS procesará en background`);
+}
+
+export async function processManualSync(data: SyncJobData, jobId?: string): Promise<void> {
+  const store = await db
+    .selectFrom('tenant_stores')
+    .select(['cms_url', 'cms_webhook_secret'])
+    .where('id', '=', data.storeId)
+    .executeTakeFirstOrThrow();
+
+  if (!store.cms_url) {
+    throw new Error(`Store ${data.storeId} no tiene cms_url configurada`);
+  }
+
+  const entity = data.entityType ?? 'products';
+  console.log(`[manual-sync:start] jobId=${jobId ?? '-'} store=${data.storeId} entity=${entity}`);
+  await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId, { entity });
+  console.log(`[manual-sync:accepted] jobId=${jobId ?? '-'} store=${data.storeId}`);
 }
 
 /**

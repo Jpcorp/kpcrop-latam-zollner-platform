@@ -60,7 +60,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 // ── Import bajo test (después de los mocks) ───────────────────────────────────
 
-const { processWebhookEvent, PermanentSyncError } = await import('../sync-worker.js');
+const { processWebhookEvent, processManualSync, PermanentSyncError } = await import('../sync-worker.js');
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -337,5 +337,67 @@ describe('processWebhookEvent', () => {
 
       expect(mockFetch).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('processManualSync (#55: sync manual disparado desde /v1/agency/clients/:id/sync)', () => {
+  const manualJobData: SyncJobData = {
+    storeId:    'store-uuid-1',
+    tenantId:   'agencia-demo',
+    syncType:   'manual',
+    entityType: 'stock',
+  };
+
+  it('envía { entity } (sin topic/bsaleData) al webhook del CMS — mismo payload bulk que ya soporta webhook.php', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+    await processManualSync(manualJobData);
+
+    const [url, fetchOpts] = mockFetch.mock.calls[0];
+    expect(url).toBe('https://tienda.cl/modules/synkrop/webhook.php');
+    expect(JSON.parse(fetchOpts.body)).toEqual({ entity: 'stock' });
+  });
+
+  it('no llama a resolveWebhookResource — no hay recurso de Bsale que resolver', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+    await processManualSync(manualJobData);
+
+    expect(mockResolveWebhookResource).not.toHaveBeenCalled();
+  });
+
+  it('usa "products" como default cuando entityType no viene', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+    await processManualSync({ ...manualJobData, entityType: undefined });
+
+    const [, fetchOpts] = mockFetch.mock.calls[0];
+    expect(JSON.parse(fetchOpts.body)).toEqual({ entity: 'products' });
+  });
+
+  it('envía X-Synkrop-Job-Id cuando se provee jobId', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+    await processManualSync(manualJobData, 'manual_store-uuid-1_stock_1700000000000');
+
+    const [, fetchOpts] = mockFetch.mock.calls[0];
+    expect(fetchOpts.headers['X-Synkrop-Job-Id']).toBe('manual_store-uuid-1_stock_1700000000000');
+  });
+
+  it('lanza error si cms_url no está configurada', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce({ cms_url: null, cms_webhook_secret: 'secret' });
+
+    await expect(processManualSync(manualJobData)).rejects.toThrow('no tiene cms_url configurada');
+  });
+
+  it('propaga PermanentSyncError si el CMS rechaza con 4xx (mismo contrato que el path de webhook)', async () => {
+    mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+    mockFetch.mockResolvedValueOnce({ ok: false, status: 422 });
+
+    await expect(processManualSync(manualJobData)).rejects.toBeInstanceOf(PermanentSyncError);
   });
 });

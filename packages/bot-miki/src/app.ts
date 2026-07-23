@@ -12,6 +12,7 @@ import { licenseRoute } from './routes/license.js';
 import { syncReportRoute } from './routes/sync-report.js';
 import { webhooksRoute } from './routes/webhooks.js';
 import { adminRoute } from './routes/admin.js';
+import { agencyRoute } from './routes/agency.js';
 import { adminKeyMatches } from './infrastructure/admin-key.js';
 import type { SyncJobData } from './workers/sync-worker.js';
 
@@ -87,6 +88,7 @@ export function buildApp(syncQueue: Queue<SyncJobData>) {
         { name: 'webhooks',  description: 'Recepcion de eventos de Bsale' },
         { name: 'sync',      description: 'Reporte de sincronizaciones' },
         { name: 'admin',     description: 'Endpoints internos de administracion (requieren X-Admin-Key)' },
+        { name: 'agency',    description: 'Panel self-service para agencias — gestion de sus propias tiendas (requieren X-API-Key)' },
       ],
     },
   });
@@ -115,6 +117,7 @@ export function buildApp(syncQueue: Queue<SyncJobData>) {
   app.register(syncReportRoute, { prefix: '/v1' });
   app.register(webhooksRoute,   { prefix: '/v1', queue: syncQueue });
   app.register(adminRoute,      { prefix: '/v1', queue: syncQueue });
+  app.register(agencyRoute,     { prefix: '/v1', queue: syncQueue });
 
   return app;
 }
