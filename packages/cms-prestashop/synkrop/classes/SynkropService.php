@@ -22,6 +22,21 @@ class SynkropService
     }
 
     /**
+     * #111: synkrop_log crece sin techo (un INSERT por webhook/sync/cli). No
+     * requiere las dependencias de instancia (Bsale/licencia) — pensado para
+     * correr desde cli/retention.php via cron del servidor.
+     * @return void
+     */
+    public static function purgeOldLogs(int $days = 90, int $batchLimit = 5000)
+    {
+        Db::getInstance()->execute(
+            'DELETE FROM `' . _DB_PREFIX_ . 'synkrop_log`
+             WHERE created_at < (UTC_TIMESTAMP() - INTERVAL ' . (int)$days . ' DAY)
+             LIMIT ' . (int)$batchLimit
+        );
+    }
+
+    /**
      * Sync quirúrgico: actualiza solo el recurso que cambió según el topic del webhook.
      * Llamado por webhook.php cuando bot-miki resuelve el recurso concreto de Bsale.
      */
@@ -109,6 +124,39 @@ class SynkropService
                 }
                 break;
         }
+
+        $result->durationMs = (int)((microtime(true) - $start) * 1000);
+        return $result;
+    }
+
+    /**
+     * #109: action=delete de una variante en Bsale. bot-miki no llama a Bsale
+     * (el recurso ya no existe, GET daria 404) — manda directo el resourceId.
+     * Pone el stock en 0 en vez de dejar el catalogo vendiendo un SKU eliminado.
+     * No desactiva el producto: puede tener otras variantes vigentes.
+     */
+    public function syncDelete(string $topic, string $resourceId): SyncResult
+    {
+        $start  = microtime(true);
+        $result = new SyncResult();
+
+        if ($topic !== 'variant') {
+            $result->failed++;
+            $result->errors[] = [
+                'code'    => $topic,
+                'message' => "syncDelete no soporta topic '{$topic}' — solo 'variant'",
+            ];
+            $result->durationMs = (int)((microtime(true) - $start) * 1000);
+            return $result;
+        }
+
+        $variantId = (int)$resourceId;
+        $idProduct = $this->findProductByBsaleVariantId($variantId);
+        if ($idProduct) {
+            $this->setStockDirect($idProduct, 0);
+            $result->updated = 1;
+        }
+        // Si no estaba mapeada, no hay nada que limpiar — no es un error.
 
         $result->durationMs = (int)((microtime(true) - $start) * 1000);
         return $result;

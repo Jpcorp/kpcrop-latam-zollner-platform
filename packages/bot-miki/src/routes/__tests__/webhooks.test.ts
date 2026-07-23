@@ -70,6 +70,61 @@ describe('POST /v1/webhooks/bsale', () => {
     await app.close();
   });
 
+  it('#97: returns 400 when resource points to an endpoint unrelated to the topic', async () => {
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      // topic=product pero resource apunta a un endpoint totalmente distinto —
+      // sin la whitelist, bot-miki haria bsale.get('/v1/clients.json') con el
+      // token del tenant, filtrando datos ajenos al sync.
+      payload: { ...validPayload, topic: 'product', resource: '/v1/clients.json' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('#97: rechaza resource de un topic distinto (variant apuntando a products)', async () => {
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: { ...validPayload, topic: 'variant', resource: '/v2/products/952.json', resourceId: '952' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('#97: acepta la forma coleccion de stock v2 sin id en el path', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-3',
+      license_id: 'lic-uuid-3',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 3',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: { ...validPayload, topic: 'stock', resource: '/v2/stocks.json?variantid=123', resourceId: '123' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
   it('returns 200 and does not enqueue for irrelevant topics', async () => {
     const app = buildTestApp();
     await app.ready();

@@ -1,7 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { Queue } from 'bullmq';
 
-const { mockExecute } = vi.hoisted(() => ({ mockExecute: vi.fn() }));
+const { mockExecute, mockDeleteExecute, mockDeleteWhere } = vi.hoisted(() => ({
+  mockExecute:       vi.fn(),
+  mockDeleteExecute: vi.fn().mockResolvedValue(undefined),
+  mockDeleteWhere:   vi.fn(),
+}));
 
 vi.mock('../../config.js', () => ({
   config: { BSALE_RATE_LIMIT_RPS: 10 },
@@ -12,10 +16,14 @@ vi.mock('../../infrastructure/database.js', () => {
   chain['innerJoin'] = () => chain;
   chain['select'] = () => chain;
   chain['where'] = () => chain;
-  return { db: { selectFrom: () => chain } };
+
+  const deleteChain: Record<string, unknown> = { execute: mockDeleteExecute };
+  deleteChain['where'] = (...args: unknown[]) => { mockDeleteWhere(...args); return deleteChain; };
+
+  return { db: { selectFrom: () => chain, deleteFrom: () => deleteChain } };
 });
 
-import { runSchedulerTick } from '../index.js';
+import { runSchedulerTick, purgeOldSyncEvents } from '../index.js';
 
 const job = {
   id: 'job-1',
@@ -71,5 +79,36 @@ describe('runSchedulerTick — idempotencia (#106)', () => {
     const jobId1 = addMock.mock.calls[0][2].jobId as string;
     const jobId2 = addMock.mock.calls[1][2].jobId as string;
     expect(jobId1).toBe(jobId2);
+  });
+});
+
+describe('purgeOldSyncEvents (#111)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('borra sync_events mas viejo que el corte de dias por default (90)', async () => {
+    vi.setSystemTime(new Date('2026-07-22T12:00:00.000Z'));
+
+    await purgeOldSyncEvents();
+
+    expect(mockDeleteWhere).toHaveBeenCalledTimes(1);
+    const [column, op, cutoff] = mockDeleteWhere.mock.calls[0];
+    expect(column).toBe('created_at');
+    expect(op).toBe('<');
+    expect((cutoff as Date).toISOString()).toBe('2026-04-23T12:00:00.000Z'); // 90 dias antes
+    expect(mockDeleteExecute).toHaveBeenCalledTimes(1);
+  });
+
+  it('respeta un valor custom de dias', async () => {
+    vi.setSystemTime(new Date('2026-07-22T00:00:00.000Z'));
+
+    await purgeOldSyncEvents(30);
+
+    const [, , cutoff] = mockDeleteWhere.mock.calls[0];
+    expect((cutoff as Date).toISOString()).toBe('2026-06-22T00:00:00.000Z');
   });
 });

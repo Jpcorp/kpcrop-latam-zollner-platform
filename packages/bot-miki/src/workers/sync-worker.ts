@@ -127,6 +127,19 @@ export async function processWebhookEvent(
 
   console.log(`[webhook:start] jobId=${jobId ?? '-'} topic=${data.topic} action=${data.action} store=${data.storeId}`);
 
+  // #109: action=delete en una variante -> el recurso ya no existe en Bsale, GET
+  // devolveria 404 y el job se descartaria sin poner el stock en 0 (el catalogo
+  // seguiria vendiendo un SKU eliminado). No hay GET que hacer: se dispatchea
+  // directo con el resourceId que ya trae el webhook. topic=stock queda afuera
+  // a proposito — su resourceId es el id del registro de stock, no el de la
+  // variante, y no hay forma de resolverlo sin el recurso que ya no existe.
+  if (data.action === 'delete' && data.topic === 'variant') {
+    await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId,
+      { topic: 'variant', action: 'delete', resourceId: data.resourceId });
+    console.log(`[webhook:accepted] jobId=${jobId ?? '-'} store=${data.storeId} — delete de variante`);
+    return;
+  }
+
   // Obtener el recurso concreto de Bsale (solo el que cambió)
   const resolved = await resolveWebhookResource(bsale, data.topic ?? '', data.resourceUrl);
 
@@ -146,11 +159,26 @@ export async function processWebhookEvent(
     ? { topic: resolved.topic, bsaleData: resolved.data }
     : { entity: topicToEntity[data.topic ?? ''] ?? 'products' };
 
-  const ajaxUrl = `${store.cms_url.replace(/\/$/, '')}/modules/synkrop/webhook.php`;
+  await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId, body);
+  console.log(`[webhook:accepted] jobId=${jobId ?? '-'} store=${data.storeId} — CMS procesará en background`);
+}
+
+/**
+ * POST al endpoint webhook.php del plugin CMS. Extraido para reusar tanto en
+ * el dispatch normal (payload quirurgico/bulk) como en el atajo de #109
+ * (action=delete de variante, que no pasa por resolveWebhookResource).
+ */
+async function dispatchToCms(
+  cmsUrl: string,
+  cmsWebhookSecret: string | null | undefined,
+  jobId: string | undefined,
+  body: Record<string, unknown>,
+): Promise<void> {
+  const ajaxUrl = `${cmsUrl.replace(/\/$/, '')}/modules/synkrop/webhook.php`;
 
   const headers: Record<string, string> = {
     'Content-Type':     'application/json',
-    'X-Synkrop-Secret': store.cms_webhook_secret ?? '',
+    'X-Synkrop-Secret': cmsWebhookSecret ?? '',
   };
   if (jobId) headers['X-Synkrop-Job-Id'] = jobId;
 
@@ -186,7 +214,6 @@ export async function processWebhookEvent(
 
   // El resultado real (records_updated, errors) llega via POST /v1/sync/report
   // que el plugin CMS llama al terminar el proceso en background.
-  console.log(`[webhook:accepted] jobId=${jobId ?? '-'} store=${data.storeId} — CMS procesará en background`);
 }
 
 async function processPollingCycle(

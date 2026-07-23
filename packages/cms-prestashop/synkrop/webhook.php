@@ -37,10 +37,14 @@ $jobId = $_SERVER['HTTP_X_SYNKROP_JOB_ID'] ?? null;
 
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
 
-// Modo quirúrgico: bot-miki resolvió el recurso concreto de Bsale
-$isSurgical = isset($body['bsaleData']) && isset($body['topic']);
+// #109: modo delete — bot-miki no llama a Bsale (el recurso ya no existe, GET
+// daria 404) y manda directo el resourceId de la variante eliminada.
+$isDelete = ($body['action'] ?? null) === 'delete' && isset($body['topic']) && isset($body['resourceId']);
 
-if (!$isSurgical) {
+// Modo quirúrgico: bot-miki resolvió el recurso concreto de Bsale
+$isSurgical = !$isDelete && isset($body['bsaleData']) && isset($body['topic']);
+
+if (!$isSurgical && !$isDelete) {
     // Modo bulk: compatibilidad con sync manual y fallback price
     $entity = $body['entity'] ?? 'stock';
     if (!in_array($entity, ['products', 'stock', 'prices'])) {
@@ -62,7 +66,7 @@ $fullConfig = Db::getInstance()->getRow(
 );
 
 $syncResult  = null;
-$syncEntity  = $isSurgical ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
+$syncEntity  = ($isSurgical || $isDelete) ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
 $syncStatus  = 'failed';
 $syncErrMsg  = null;
 // #93: distingue fallo transitorio (excepción → bot-miki reintenta) de permanente
@@ -106,9 +110,11 @@ try {
     );
     $service = new SynkropService($bsale, $license, 1);
 
-    $syncResult = $isSurgical
-        ? $service->syncSingle($body['topic'], $body['bsaleData'])
-        : $service->sync($entity);
+    $syncResult = $isDelete
+        ? $service->syncDelete($body['topic'], $body['resourceId'])
+        : ($isSurgical
+            ? $service->syncSingle($body['topic'], $body['bsaleData'])
+            : $service->sync($entity));
 
     $syncStatus = $syncResult->status();
 

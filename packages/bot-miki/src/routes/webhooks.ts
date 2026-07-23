@@ -12,6 +12,20 @@ interface BsaleWebhookPayload {
   send: number;           // unix timestamp
 }
 
+// #97: whitelist de rutas por topic — resourceUrl viene del payload del webhook
+// (no autenticado, ver mas abajo) y se usa directo en bsale.get(resourceUrl) mas
+// adelante en el worker. Sin esto, un cpnId adivinado/enumerado permite forzar a
+// bot-miki a leer CUALQUIER endpoint de Bsale (ej. /v1/clients.json,
+// /v1/documents.json) con el token del tenant victima, no solo stock/variant/product.
+// price no usa resourceUrl (cae a bulk) — no necesita whitelist.
+const RESOURCE_WHITELIST: Record<string, RegExp> = {
+  product: /^\/v[12]\/products\/\d+\.json(\?.*)?$/,
+  variant: /^\/v[12]\/variants\/\d+\.json(\?.*)?$/,
+  // stock permite ademas la forma coleccion de v2 (sin id en el path, ej.
+  // "/v2/stocks.json?variantid=123") — el resolver ya maneja ambas formas.
+  stock:   /^\/v[12]\/stocks(\/\d+)?\.json(\?.*)?$/,
+};
+
 export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<SyncJobData> }) {
   const { queue } = opts;
   app.post<{ Body: BsaleWebhookPayload }>(
@@ -52,6 +66,13 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
           'webhook con topic ignorado'
         );
         return reply.code(200).send(); // Aceptar pero ignorar
+      }
+
+      // #97: el resource debe coincidir con la forma esperada para su topic —
+      // rechaza cualquier intento de apuntar bsale.get() a un endpoint distinto.
+      const whitelist = RESOURCE_WHITELIST[payload.topic];
+      if (whitelist && !whitelist.test(payload.resource)) {
+        return reply.code(400).send({ error: 'invalid_resource' });
       }
 
       // Buscar tenant por cpnId de Bsale — join con licenses para obtener el tenant_id string

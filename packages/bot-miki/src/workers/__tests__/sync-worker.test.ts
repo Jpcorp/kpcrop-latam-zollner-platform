@@ -189,6 +189,44 @@ describe('processWebhookEvent', () => {
     });
   });
 
+  describe('action=delete — variant (#109)', () => {
+    const deleteJobData: SyncJobData = {
+      ...baseJobData,
+      topic:      'variant',
+      action:     'delete',
+      resourceId: '9506',
+    };
+
+    it('NO llama a resolveWebhookResource (el recurso ya no existe en Bsale)', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+      await processWebhookEvent(deleteJobData, mockBsale);
+
+      expect(mockResolveWebhookResource).not.toHaveBeenCalled();
+    });
+
+    it('despacha { topic, action, resourceId } directo al CMS', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+      await processWebhookEvent(deleteJobData, mockBsale);
+
+      const [, fetchOpts] = mockFetch.mock.calls[0];
+      expect(JSON.parse(fetchOpts.body)).toEqual({ topic: 'variant', action: 'delete', resourceId: '9506' });
+    });
+
+    it('topic=stock con action=delete NO usa el atajo (no hay forma de resolver el variantId)', async () => {
+      const stockDeleteJob: SyncJobData = { ...baseJobData, topic: 'stock', action: 'delete' };
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: null });
+
+      await processWebhookEvent(stockDeleteJob, mockBsale);
+
+      expect(mockResolveWebhookResource).toHaveBeenCalled();
+    });
+  });
+
   describe('stock v2 colección vacía', () => {
     it('no llama a fetch cuando resolveWebhookResource devuelve stock data=null', async () => {
       mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);

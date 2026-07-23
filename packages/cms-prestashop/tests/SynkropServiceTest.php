@@ -377,6 +377,83 @@ class SynkropServiceTest extends TestCase
         $this->assertEmpty(Product::$added, 'No debe crear productos cuando la variante no existe en Bsale');
     }
 
+    // ─── syncDelete: action=delete de variante (#109) ─────────────────────────
+
+    public function test_syncDelete_sets_stock_zero_for_mapped_variant(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = 42; // variante 9506 mapeada al producto 42
+        $db->queryResults['stock_available'] = 7; // ya existe fila de stock -> toma la rama UPDATE
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncDelete('variant', '9506');
+
+        $this->assertEquals(1, $result->updated);
+        $this->assertEquals(0, $result->failed);
+
+        $stockCall = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'stock_available'
+        ))[0] ?? null;
+        $this->assertNotNull($stockCall, 'Debe actualizar stock_available');
+        $this->assertEquals(0, $stockCall['data']['quantity']);
+    }
+
+    public function test_syncDelete_noop_success_for_unmapped_variant(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = null; // nunca estuvo mapeada
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncDelete('variant', '9999');
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(0, $result->failed, 'No mapeada no es un error — no habia nada que limpiar');
+        $this->assertEmpty($db->getCalls('update'));
+    }
+
+    public function test_syncDelete_fails_for_unsupported_topic(): void
+    {
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncDelete('product', '123');
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(1, $result->failed);
+    }
+
+    // ─── purgeOldLogs: retencion de synkrop_log (#111) ────────────────────────
+
+    public function test_purgeOldLogs_deletes_with_default_90_days(): void
+    {
+        $db = Db::getInstance();
+
+        SynkropService::purgeOldLogs();
+
+        $calls = $db->getCalls('execute');
+        $this->assertCount(1, $calls);
+        $this->assertStringContainsString('DELETE FROM', $calls[0]['sql']);
+        $this->assertStringContainsString('synkrop_log', $calls[0]['sql']);
+        $this->assertStringContainsString('INTERVAL 90 DAY', $calls[0]['sql']);
+        $this->assertStringContainsString('LIMIT 5000', $calls[0]['sql']);
+    }
+
+    public function test_purgeOldLogs_respects_custom_days_and_batch_limit(): void
+    {
+        $db = Db::getInstance();
+
+        SynkropService::purgeOldLogs(30, 1000);
+
+        $calls = $db->getCalls('execute');
+        $this->assertStringContainsString('INTERVAL 30 DAY', $calls[0]['sql']);
+        $this->assertStringContainsString('LIMIT 1000', $calls[0]['sql']);
+    }
+
     // ─── SyncResult ──────────────────────────────────────────────────────────
 
     public function test_SyncResult_status_success_when_no_failures(): void

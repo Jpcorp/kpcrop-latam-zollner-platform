@@ -66,5 +66,18 @@ export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void>
 
 export function startScheduler(queue: Queue<SyncJobData>): NodeJS.Timeout {
   // Tick cada minuto para evaluar cron expressions
-  return setInterval(() => runSchedulerTick(queue).catch(console.error), 60_000);
+  const tick = setInterval(() => runSchedulerTick(queue).catch(console.error), 60_000);
+
+  // #111: sync_events crece sin techo (un INSERT por webhook/sync). Sweep de
+  // retencion cada 24h — sin cron dedicado en bot-miki, se resuelve dentro del
+  // mismo proceso del scheduler en vez de agregar infraestructura nueva.
+  setInterval(() => purgeOldSyncEvents().catch(console.error), 24 * 60 * 60 * 1000);
+
+  return tick;
+}
+
+/** #111: purga sync_events mas viejo que `days` (default 90). */
+export async function purgeOldSyncEvents(days = 90): Promise<void> {
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  await db.deleteFrom('sync_events').where('created_at', '<', cutoff).execute();
 }
