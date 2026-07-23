@@ -161,8 +161,18 @@ class BsaleApiClient
 
 class BsaleApiException extends RuntimeException
 {
+    // #115: el body de la respuesta de Bsale entraba entero en el mensaje de
+    // excepcion, que termina guardado en synkrop_log.error_details — un error
+    // inesperadamente largo (o que Bsale cambie de forma) podia volcar mucho
+    // mas de lo necesario para diagnosticar. Truncado a un tamano razonable
+    // para debug sin acumular payloads completos en el log.
+    private const MAX_BODY_LENGTH = 500;
+
     public function __construct(int $httpCode, string $body)
     {
+        if (strlen($body) > self::MAX_BODY_LENGTH) {
+            $body = substr($body, 0, self::MAX_BODY_LENGTH) . '... (truncado)';
+        }
         parent::__construct("Bsale API {$httpCode}: {$body}", $httpCode);
     }
 
