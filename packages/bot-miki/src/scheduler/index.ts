@@ -1,8 +1,35 @@
 import { Queue } from 'bullmq';
-import IORedis from 'ioredis';
+import { Redis as IORedis } from 'ioredis';
 import { config } from '../config.js';
 import { db } from '../infrastructure/database.js';
 import type { SyncJobData } from '../workers/sync-worker.js';
+
+// #113: si bot-miki llega a escalar horizontalmente (varias replicas del
+// mismo proceso), cada una tendria su propio setInterval corriendo el mismo
+// tick al mismo tiempo -> jobs de polling duplicados (mitigado mecanicamente
+// por el idempotencyKey de BullMQ, pero es trabajo redundante innecesario).
+// Lock distribuido simple sobre Redis (SET NX PX): la primera replica que
+// llega en cada ventana de 60s corre el tick, las demas lo saltean.
+let lockRedis: IORedis | null = null;
+function getLockRedis(): IORedis {
+  if (!lockRedis) {
+    lockRedis = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null });
+  }
+  return lockRedis;
+}
+
+/** Permite inyectar un cliente Redis mockeado en tests sin tocar el singleton real. */
+export function __setLockRedisClientForTests(client: IORedis | null): void {
+  lockRedis = client;
+}
+
+const SCHEDULER_LOCK_KEY = 'scheduler:lock';
+const SCHEDULER_LOCK_TTL_MS = 55_000; // < 60s del interval — se libera solo antes del proximo tick
+
+async function acquireSchedulerLock(): Promise<boolean> {
+  const result = await getLockRedis().set(SCHEDULER_LOCK_KEY, process.pid.toString(), 'PX', SCHEDULER_LOCK_TTL_MS, 'NX');
+  return result === 'OK';
+}
 
 function cronMatches(expression: string, now: Date): boolean {
   // Evaluacion minimalista de cron — solo patrones usados en la plataforma:
@@ -68,9 +95,15 @@ export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void>
   }
 }
 
+export async function runIfLeader(queue: Queue<SyncJobData>): Promise<void> {
+  if (await acquireSchedulerLock()) {
+    await runSchedulerTick(queue);
+  }
+}
+
 export function startScheduler(queue: Queue<SyncJobData>): NodeJS.Timeout {
-  // Tick cada minuto para evaluar cron expressions
-  const tick = setInterval(() => runSchedulerTick(queue).catch(console.error), 60_000);
+  // Tick cada minuto para evaluar cron expressions (solo la replica que gana el lock)
+  const tick = setInterval(() => runIfLeader(queue).catch(console.error), 60_000);
 
   // #111: sync_events crece sin techo (un INSERT por webhook/sync). Sweep de
   // retencion cada 24h — sin cron dedicado en bot-miki, se resuelve dentro del

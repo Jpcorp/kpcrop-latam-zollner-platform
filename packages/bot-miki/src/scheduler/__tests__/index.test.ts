@@ -8,7 +8,7 @@ const { mockExecute, mockDeleteExecute, mockDeleteWhere } = vi.hoisted(() => ({
 }));
 
 vi.mock('../../config.js', () => ({
-  config: { BSALE_RATE_LIMIT_RPS: 10 },
+  config: { BSALE_RATE_LIMIT_RPS: 10, REDIS_URL: 'redis://localhost:6379' },
 }));
 
 vi.mock('../../infrastructure/database.js', () => {
@@ -23,7 +23,7 @@ vi.mock('../../infrastructure/database.js', () => {
   return { db: { selectFrom: () => chain, deleteFrom: () => deleteChain } };
 });
 
-import { runSchedulerTick, purgeOldSyncEvents } from '../index.js';
+import { runSchedulerTick, purgeOldSyncEvents, runIfLeader, __setLockRedisClientForTests } from '../index.js';
 
 const job = {
   id: 'job-1',
@@ -121,5 +121,45 @@ describe('purgeOldSyncEvents (#111)', () => {
 
     const [, , cutoff] = mockDeleteWhere.mock.calls[0];
     expect((cutoff as Date).toISOString()).toBe('2026-06-22T00:00:00.000Z');
+  });
+});
+
+describe('runIfLeader — lock distribuido (#113)', () => {
+  const mockSet = vi.fn();
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-22T14:15:00.000Z'));
+    mockExecute.mockResolvedValue([job]);
+    mockSet.mockReset();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    __setLockRedisClientForTests({ set: mockSet } as any);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.clearAllMocks();
+    __setLockRedisClientForTests(null);
+  });
+
+  it('corre el tick cuando gana el lock (SET NX devuelve OK)', async () => {
+    mockSet.mockResolvedValueOnce('OK');
+    const addMock = vi.fn().mockResolvedValue(undefined);
+    const queue = { add: addMock } as unknown as Queue;
+
+    await runIfLeader(queue);
+
+    expect(mockSet).toHaveBeenCalledWith('scheduler:lock', expect.any(String), 'PX', 55_000, 'NX');
+    expect(addMock).toHaveBeenCalledTimes(1); // corrio el tick de verdad
+  });
+
+  it('saltea el tick cuando otra replica ya tiene el lock (SET NX devuelve null)', async () => {
+    mockSet.mockResolvedValueOnce(null);
+    const addMock = vi.fn().mockResolvedValue(undefined);
+    const queue = { add: addMock } as unknown as Queue;
+
+    await runIfLeader(queue);
+
+    expect(addMock).not.toHaveBeenCalled(); // no corrio el tick
   });
 });
