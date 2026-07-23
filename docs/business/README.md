@@ -24,6 +24,8 @@ Este directorio contiene el analisis estrategico de negocio del proyecto. Los do
 | [One-Pager Agencias](./agency-onepager.md) | Problema, solución, pricing, economía para la agencia y CTA — listo para enviar | v1.0 — 2026-06-20 |
 | [Pitch Deck Agencias](./agency-pitch-deck.md) | 5 slides para call de 20 min con director de agencia, con guía de conversación y objeciones | v1.0 — 2026-06-20 |
 | [Templates Outreach Agencias](./agency-outreach-templates.md) | 4 templates LinkedIn/email (frío, follow-up, post-conexión) y guía de calificación | v1.0 — 2026-06-20 |
+| [Plantilla Mapeo 20 Agencias](./agency-mapping-tracker.csv) + [guía](./agency-mapping-guide.md) | Tracker CSV de 20 filas para calificar y hacer seguimiento del outreach (#59) | v1.0 — 2026-07-23 |
+| [Pitch Deck (.pptx)](./agency-pitch-deck.pptx) | Versión visual editable del guión de `agency-pitch-deck.md`, lista para presentar | v1.0 — 2026-07-23 |
 | [Buyer Personas](./buyer-personas.md) | 4 perfiles de cliente con dolores, canales, willingness to pay y mapa de empatia | v1.1 — con Mapas de Empatia |
 | [Plan Go-to-Market](./go-to-market.md) | Canales, mensajes, secuencia de lanzamiento, metricas de exito | Borrador v1.0 |
 

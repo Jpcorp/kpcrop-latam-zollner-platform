@@ -95,7 +95,7 @@ Con precio de $25.000/cliente y 10 clientes: **+$60.000/mes de margen**.
 En esa llamada revisamos juntos cuántos de tus clientes usan Bsale + PrestaShop y calculamos el margen exacto para tu agencia.
 
 > **Contacto:** [ju.guinart@live.cl](mailto:ju.guinart@live.cl)
-> **Demo en vivo:** [miki.keepcrop.com/docs](https://miki.keepcrop.com/docs)
+> **Demo:** se agenda en la llamada de 20 minutos — no hay demo pública autoservicio todavía.
 
 ---
 
