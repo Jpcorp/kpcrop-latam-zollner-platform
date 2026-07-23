@@ -33,6 +33,12 @@ export async function licenseRoute(app: FastifyInstance) {
           402: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } },
         },
       },
+      // #108: mas estricto que el default global (100/min) — este endpoint
+      // solo necesita X-API-Key valida para responder, es el blanco natural
+      // de fuerza bruta de API Keys.
+      config: {
+        rateLimit: { max: 20, timeWindow: '1 minute' },
+      },
     },
     async (request, reply) => {
       const { tenantId } = request.query;
