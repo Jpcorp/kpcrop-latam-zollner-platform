@@ -109,13 +109,20 @@ SKU al momento de la compra.
 
 ## Caso 7 — Efectos en el stock de Bsale
 
-Míralo en el panel Bsale (Inventario → Stock, sucursal Casa Matriz) en cada fase:
+Míralo en el panel Bsale (Inventario → Stock, sucursal Casa Matriz) en cada fase, o medilo
+directo por API con `bash ssh/bsale_sandbox.sh stock-test 3 <sku>` (crea la nota y compara
+antes/después) y `bash ssh/bsale_sandbox.sh cancel <docId>` (anula y libera):
 
-| Evento | Efecto |
-|---|---|
-| Nota de venta generada | **Reserva**: disponible baja, stock físico intacto |
-| Boleta emitida | **Descuenta** el físico |
-| Nota anulada | **Libera** la reserva |
+| Evento | Efecto | Validado |
+|---|---|---|
+| Nota de venta generada | **Reserva**: disponible baja, stock físico intacto | ✅ (`quantity` igual, `quantityReserved` sube) |
+| Boleta emitida | **Descuenta** el físico | ⚠️ solo con boleta/factura **electrónica real** (producción) |
+| Nota anulada | **Libera** la reserva | ✅ (`quantityReserved` vuelve a bajar) |
+
+⚠️ **Matiz de sandbox**: un documento manual ("no válido al SII") creado vía `emit-like`
+también **reserva** en vez de descontar — el sandbox no ejecuta un descuento físico real para
+documentos no electrónicos. El descuento genuino del inventario solo se puede observar en
+producción, con una boleta/factura electrónica de verdad.
 
 ## Caso 8 — SKU de despacho configurable
 
