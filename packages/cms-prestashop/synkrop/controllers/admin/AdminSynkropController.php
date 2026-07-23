@@ -100,14 +100,16 @@ class AdminSynkropController extends ModuleAdminController
         }
 
         $this->context->smarty->assign([
-            'is_configured'  => $isConfigured,
-            'license_banner' => $licenseBanner,
-            'sync_logs'      => $logs,
-            'ajax_url'       => $this->context->link->getAdminLink('AdminSynkrop') . '&ajax=1',
-            'orders_enabled' => $ordersEnabled,
-            'order_queue'    => $orderQueue,
-            'order_counts'   => $orderCounts,
-            'config_url'     => $this->context->link->getAdminLink('AdminModules') . '&configure=synkrop',
+            'is_configured'         => $isConfigured,
+            'license_banner'        => $licenseBanner,
+            'sync_logs'             => $logs,
+            'ajax_url'              => $this->context->link->getAdminLink('AdminSynkrop') . '&ajax=1',
+            'orders_enabled'        => $ordersEnabled,
+            'order_queue'           => $orderQueue,
+            'order_counts'          => $orderCounts,
+            'config_url'            => $this->context->link->getAdminLink('AdminModules') . '&configure=synkrop',
+            // #87: boton "Categorias" solo visible si la feature esta activada
+            'category_sync_enabled' => (int)($config['sync_categories'] ?? 0) === 1,
         ]);
 
         $this->content = $this->context->smarty->fetch(

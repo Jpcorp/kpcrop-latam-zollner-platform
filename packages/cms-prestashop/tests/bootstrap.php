@@ -188,10 +188,43 @@ class Product
 
 class Configuration
 {
+    /** @var array<string, mixed> configurar antes del test para sobreescribir un valor */
+    public static array $values = [];
+
     public static function get(string $key)
     {
+        if (array_key_exists($key, self::$values)) return self::$values[$key];
         if ($key === 'PS_LANG_DEFAULT') return 1;
         return null;
+    }
+
+    public static function reset(): void
+    {
+        self::$values = [];
+    }
+}
+
+// #87: stub de categoria PS (sync de categorias Bsale -> PS)
+class Category
+{
+    public $id;
+    public $id_parent = 0;
+    public $active = 1;
+    public array $name = [];
+    public array $link_rewrite = [];
+
+    public static array $added = [];
+
+    public function add(): bool
+    {
+        $this->id = rand(1000, 9999);
+        self::$added[] = $this;
+        return true;
+    }
+
+    public static function reset(): void
+    {
+        self::$added = [];
     }
 }
 

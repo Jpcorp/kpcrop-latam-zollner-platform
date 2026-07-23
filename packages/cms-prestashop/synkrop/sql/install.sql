@@ -31,8 +31,24 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     -- vencida/suspendida) — limita la frecuencia para que no sea sustituto
     -- gratuito del auto-sync mientras incentiva renovar.
     `degraded_manual_sync_at` DATETIME DEFAULT NULL,
+    -- #87: sync de categorias Bsale -> PS (modo automatico, MVP)
+    `sync_categories`       TINYINT(1) NOT NULL DEFAULT 0,
+    `category_parent_id`    INT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_shop` (`id_shop`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- #87: mapeo persistente bsale_type <-> categoria PrestaShop
+CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_category_map` (
+    `id`              INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `id_shop`         INT UNSIGNED NOT NULL DEFAULT 1,
+    `bsale_type_id`   INT UNSIGNED NOT NULL,
+    `bsale_type_name` VARCHAR(128) NOT NULL,
+    `id_ps_category`  INT UNSIGNED NOT NULL,
+    `active`          TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at`      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_shop_type` (`id_shop`, `bsale_type_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Mapeo entre variantes Bsale y productos PrestaShop

@@ -128,6 +128,12 @@
                     title="{l s='Actualizar precios de productos existentes' mod='synkrop'}">
               <i class="icon-tag"></i>&nbsp;{l s='Precios' mod='synkrop'}
             </button>
+            {if $category_sync_enabled}
+            <button class="btn btn-default btn-sync" data-entity="categories"
+                    title="{l s='Crear/actualizar categorias desde los tipos de producto de Bsale' mod='synkrop'}">
+              <i class="icon-sitemap"></i>&nbsp;{l s='Categorias' mod='synkrop'}
+            </button>
+            {/if}
           </div>
 
           <div id="synkrop-progress" class="hidden" style="margin-top:16px">

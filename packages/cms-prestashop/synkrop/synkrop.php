@@ -288,6 +288,8 @@ class Synkrop extends Module
             'order_vat_rate'       => $vatRate,
             'shipping_sku'         => pSQL(trim((string)Tools::getValue('SYNKROP_SHIPPING_SKU', ''))),
             'test_mode'            => (int)Tools::getValue('SYNKROP_TEST_MODE', 0),
+            'sync_categories'      => (int)Tools::getValue('SYNKROP_SYNC_CATEGORIES', 0),
+            'category_parent_id'   => (int)Tools::getValue('SYNKROP_CATEGORY_PARENT_ID', 0) ?: null,
         ];
 
         // Solo re-cifra y sobreescribe el token si el usuario pego uno nuevo
@@ -370,6 +372,22 @@ class Synkrop extends Module
                     ],
                     [
                         'type'    => 'switch',
+                        'label'   => $this->l('Sincronizar categorias desde Bsale'),
+                        'name'    => 'SYNKROP_SYNC_CATEGORIES',
+                        'desc'    => $this->l('Modo automatico (#87): crea (o reutiliza si ya existe) una categoria PS por cada tipo de producto de Bsale, bajo la categoria padre indicada abajo.'),
+                        'values'  => [
+                            ['id' => 'sync_categories_on',  'value' => 1, 'label' => $this->l('Sí')],
+                            ['id' => 'sync_categories_off', 'value' => 0, 'label' => $this->l('No')],
+                        ],
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Categoria padre (ID)'),
+                        'name'  => 'SYNKROP_CATEGORY_PARENT_ID',
+                        'desc'  => $this->l('ID de la categoria PS bajo la cual crear las categorias de Bsale. En blanco: se usa la categoria Inicio de la tienda.'),
+                    ],
+                    [
+                        'type'    => 'switch',
                         'label'   => $this->l('Modo prueba (verificacion de emisiones)'),
                         'name'    => 'SYNKROP_TEST_MODE',
                         'desc'    => $this->l('SOLO para sandbox o staging. "Verificar emisiones" acepta cualquier documento manual (boleta/factura no tributaria) como emision valida, sin exigir codigo SII. NUNCA actives esto en produccion: se saltaria la validacion de documento tributario real.'),
@@ -406,6 +424,8 @@ class Synkrop extends Module
             'SYNKROP_ORDER_VAT_RATE'       => $config['order_vat_rate'] ?? '19.00',
             'SYNKROP_SHIPPING_SKU'         => $config['shipping_sku'] ?? '',
             'SYNKROP_TEST_MODE'            => (int)($config['test_mode'] ?? 0),
+            'SYNKROP_SYNC_CATEGORIES'      => (int)($config['sync_categories'] ?? 0),
+            'SYNKROP_CATEGORY_PARENT_ID'   => $config['category_parent_id'] ?? '',
         ];
 
         return $helper->generateForm([$fields]);

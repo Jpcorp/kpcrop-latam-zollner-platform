@@ -218,10 +218,11 @@ class SynkropService
     private function dispatchSync(string $entityType): SyncResult
     {
         switch ($entityType) {
-            case 'products': return $this->syncProducts();
-            case 'stock':    return $this->syncStock();
-            case 'prices':   return $this->syncPrices();
-            default:         throw new InvalidArgumentException("Entidad no soportada: {$entityType}");
+            case 'products':   return $this->syncProducts();
+            case 'stock':      return $this->syncStock();
+            case 'prices':     return $this->syncPrices();
+            case 'categories': return $this->syncCategories();
+            default:           throw new InvalidArgumentException("Entidad no soportada: {$entityType}");
         }
     }
 
@@ -254,6 +255,116 @@ class SynkropService
             ['degraded_manual_sync_at' => gmdate('Y-m-d H:i:s')],
             'id_shop = ' . $this->idShop
         );
+    }
+
+    /**
+     * #87: sync de categorias Bsale -> PS (modo automatico, MVP — sin vista
+     * previa ni mapeo manual todavia). Crea (o reutiliza si ya existe una con
+     * el mismo nombre bajo el mismo padre) una categoria PS por cada
+     * product_type de Bsale, y guarda el mapeo en synkrop_category_map.
+     */
+    public function syncCategories(): SyncResult
+    {
+        $start  = microtime(true);
+        $result = new SyncResult();
+
+        $config = Db::getInstance()->getRow(
+            'SELECT sync_categories, category_parent_id FROM `' . _DB_PREFIX_ . 'synkrop_config`
+             WHERE id_shop = ' . $this->idShop
+        );
+
+        if (empty($config['sync_categories'])) {
+            throw new RuntimeException('Sincronización de categorías desactivada. Actívala en Configuración > Synkrop.');
+        }
+
+        $parentId = (int)($config['category_parent_id'] ?? 0) ?: (int)Configuration::get('PS_HOME_CATEGORY');
+
+        $types = $this->bsale->getAll('/v1/product_types.json');
+
+        foreach ($types as $type) {
+            $typeId = (int)($type['id'] ?? 0);
+            try {
+                $typeName = trim((string)($type['name'] ?? ''));
+                // Mismos caracteres invalidos para PS que en upsertVariant (nombre de categoria)
+                $typeName = trim(preg_replace('/[<>{};=#\\x00-\\x1F]/u', '', $typeName));
+                if (!$typeId || $typeName === '') {
+                    continue;
+                }
+
+                $idPsCategory = $this->resolveOrCreateCategory($typeName, $parentId);
+
+                Db::getInstance()->execute(
+                    'INSERT INTO `' . _DB_PREFIX_ . 'synkrop_category_map`
+                     (id_shop, bsale_type_id, bsale_type_name, id_ps_category, active)
+                     VALUES (' . $this->idShop . ', ' . $typeId . ', "' . pSQL($typeName) . '", ' . $idPsCategory . ', 1)
+                     ON DUPLICATE KEY UPDATE bsale_type_name = VALUES(bsale_type_name),
+                                             id_ps_category = VALUES(id_ps_category), active = 1'
+                );
+                $result->updated++;
+            } catch (Exception $e) {
+                $result->failed++;
+                $result->errors[] = [
+                    'code'    => (string)($typeId ?: ($type['id'] ?? '?')),
+                    'message' => $e->getMessage(),
+                ];
+            }
+        }
+
+        $result->durationMs = (int)((microtime(true) - $start) * 1000);
+        return $result;
+    }
+
+    /**
+     * Reutiliza una categoria PS existente con el mismo nombre bajo el mismo
+     * padre (criterio de aceptación de #87: "si ya existe, la reutiliza en
+     * vez de duplicar"), o la crea si no existe.
+     */
+    private function resolveOrCreateCategory(string $name, int $parentId): int
+    {
+        $existing = Db::getInstance()->getValue(
+            'SELECT cl.id_category FROM `' . _DB_PREFIX_ . 'category_lang` cl
+             INNER JOIN `' . _DB_PREFIX_ . 'category` c ON c.id_category = cl.id_category
+             WHERE cl.name = "' . pSQL($name) . '" AND c.id_parent = ' . $parentId
+        );
+        if ($existing) {
+            return (int)$existing;
+        }
+
+        $defaultLangId = (int)Configuration::get('PS_LANG_DEFAULT');
+
+        $category = new Category();
+        $category->id_parent = $parentId;
+        $category->active    = 1;
+        $category->name[$defaultLangId]         = $name;
+        $category->link_rewrite[$defaultLangId] = Tools::link_rewrite($name);
+
+        if (!$category->add()) {
+            throw new RuntimeException("No se pudo crear la categoría '{$name}' en PrestaShop");
+        }
+
+        return (int)$category->id;
+    }
+
+    /**
+     * Resuelve la categoria PS de un producto segun su product_type de Bsale.
+     * Sin mapeo (feature desactivada o categoria nunca sincronizada) cae al
+     * comportamiento actual: PS_HOME_CATEGORY — comportamiento identico al de
+     * antes de #87 (criterio de aceptación: "si sync de categorías está
+     * desactivado, syncProducts() se comporta igual que hoy").
+     */
+    private function resolveCategoryId(?int $bsaleTypeId): int
+    {
+        if ($bsaleTypeId) {
+            $mapped = Db::getInstance()->getValue(
+                'SELECT id_ps_category FROM `' . _DB_PREFIX_ . 'synkrop_category_map`
+                 WHERE id_shop = ' . $this->idShop . ' AND bsale_type_id = ' . $bsaleTypeId . ' AND active = 1'
+            );
+            if ($mapped) {
+                return (int)$mapped;
+            }
+        }
+
+        return (int)Configuration::get('PS_HOME_CATEGORY');
     }
 
     private function syncProducts(): SyncResult
@@ -348,8 +459,13 @@ class SynkropService
             $psProduct->active = $isNew ? 0 : ((int)$product['state'] === 0 ? 1 : 0);
 
             if ($isNew) {
+                // #87: si hay sync de categorias activo y mapeo para el product_type
+                // de Bsale, usa esa categoria — si no, cae a PS_HOME_CATEGORY (igual
+                // que antes de #87).
+                $categoryId = $this->resolveCategoryId((int)($product['product_type']['id'] ?? 0) ?: null);
+
                 // Campos obligatorios para Product::add() en PS 1.7
-                $psProduct->id_category_default  = (int)Configuration::get('PS_HOME_CATEGORY');
+                $psProduct->id_category_default  = $categoryId;
                 $psProduct->link_rewrite[$defaultLangId] = Tools::link_rewrite($name);
                 $psProduct->id_tax_rules_group   = (int)Configuration::get('PS_TAX_DISPLAY_PREFERENCE') ?: 0;
                 $psProduct->minimal_quantity     = 1;
@@ -362,8 +478,8 @@ class SynkropService
 
                 $psProduct->add();
 
-                // Asociar a la categoria home (requerido para que aparezca en catálogo)
-                $psProduct->addToCategories([(int)Configuration::get('PS_HOME_CATEGORY')]);
+                // Asociar a su categoria (home si no hay mapeo — requerido para que aparezca en catálogo)
+                $psProduct->addToCategories([$categoryId]);
             } else {
                 $psProduct->update();
             }
