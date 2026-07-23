@@ -100,6 +100,7 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
           resourceId:  payload.resourceId,
           topic:       payload.topic,
           action:      payload.action,
+          send:        payload.send, // #115: para que el CMS descarte eventos de stock fuera de orden
         },
         {
           jobId:    idempotencyKey,

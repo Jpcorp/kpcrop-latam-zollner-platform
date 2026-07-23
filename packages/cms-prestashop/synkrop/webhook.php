@@ -116,10 +116,14 @@ try {
     $license = new LicenseClient(SYNKROP_DAEMON_URL, $fullConfig['daemon_api_key']);
     $service = new SynkropService($bsale, $license, 1);
 
+    // #115: send (timestamp del webhook original) permite descartar eventos
+    // de stock que bot-miki procesa fuera de orden.
+    $sendTimestamp = isset($body['send']) ? (int)$body['send'] : null;
+
     $syncResult = $isDelete
         ? $service->syncDelete($body['topic'], $body['resourceId'])
         : ($isSurgical
-            ? $service->syncSingle($body['topic'], $body['bsaleData'])
+            ? $service->syncSingle($body['topic'], $body['bsaleData'], $sendTimestamp)
             : $service->sync($entity));
 
     $syncStatus = $syncResult->status();

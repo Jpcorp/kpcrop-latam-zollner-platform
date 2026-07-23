@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_product_map` (
     `bsale_code`            VARCHAR(100) NOT NULL,
     `bsale_barcode`         VARCHAR(50) DEFAULT NULL,
     `last_synced_at`        DATETIME DEFAULT NULL,
+    -- #115: timestamp (`send` del webhook de Bsale) del ultimo evento de
+    -- stock aplicado para esta variante — permite descartar eventos que
+    -- llegan fuera de orden (concurrency:5 en bot-miki + red variable).
+    `last_stock_event_send` INT UNSIGNED DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_bsale_code_shop` (`bsale_code`, `id_shop`),
     -- #103: unicidad por variante — evita filas huerfanas si el `code` de una

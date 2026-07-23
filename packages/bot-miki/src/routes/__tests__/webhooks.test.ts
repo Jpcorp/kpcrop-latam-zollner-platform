@@ -237,4 +237,27 @@ describe('POST /v1/webhooks/bsale', () => {
     expect(jobOpts.removeOnFail).toEqual({ age: 604_800 });
     await app.close();
   });
+
+  it('#115: incluye send en el job encolado (para descartar eventos de stock fuera de orden)', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-4',
+      license_id: 'lic-uuid-4',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 4',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    const [, jobData] = mockQueueAdd.mock.calls[0];
+    expect(jobData.send).toBe(validPayload.send);
+    await app.close();
+  });
 });

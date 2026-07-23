@@ -521,4 +521,102 @@ class SynkropServiceTest extends TestCase
 
         $this->assertEmpty(Product::$added, 'No debe crear el producto si no consiguio el lock');
     }
+
+    // ─── syncSingle stock: orden de eventos por variante (#115) ───────────────
+    // Dos webhooks de stock para la MISMA variante pueden llegar y procesarse
+    // fuera de orden (concurrency:5 en bot-miki + latencia de red variable).
+    // Sin esto, el evento mas viejo puede pisar al mas nuevo con datos obsoletos.
+
+    private function mockProductMapWithLastSend($db, int $idProduct, $lastSend)
+    {
+        $db->queryResults['synkrop_product_map'] = function (string $sql) use ($idProduct, $lastSend) {
+            if (strpos($sql, 'last_stock_event_send') !== false) {
+                return $lastSend;
+            }
+            if (strpos($sql, 'bsale_variant_id') !== false) {
+                return $idProduct;
+            }
+            return null; // exists-check de saveProductMap por bsale_code, no aplica aca
+        };
+    }
+
+    public function test_syncSingle_stock_sin_sendTimestamp_aplica_como_antes(): void
+    {
+        // Retrocompatibilidad: si no viene el timestamp (otros llamadores que
+        // todavia no lo pasan), el comportamiento es identico al de siempre.
+        $db = Db::getInstance();
+        $this->mockProductMapWithLastSend($db, 42, null);
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 7,
+        ]);
+
+        $this->assertEquals(1, $result->updated);
+    }
+
+    public function test_syncSingle_stock_aplica_evento_mas_nuevo_y_registra_el_timestamp(): void
+    {
+        $db = Db::getInstance();
+        $this->mockProductMapWithLastSend($db, 42, null); // nunca se aplico nada todavia
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 7,
+        ], 1_700_000_000);
+
+        $this->assertEquals(1, $result->updated);
+
+        $updateCall = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'synkrop_product_map' && array_key_exists('last_stock_event_send', $c['data'])
+        ));
+        $this->assertNotEmpty($updateCall, 'Debe registrar el timestamp del evento aplicado');
+        $this->assertEquals(1_700_000_000, $updateCall[0]['data']['last_stock_event_send']);
+    }
+
+    public function test_syncSingle_stock_descarta_evento_mas_viejo_que_el_ya_aplicado(): void
+    {
+        $db = Db::getInstance();
+        // Ya se aplico un evento con send=1_700_000_500 (mas nuevo)
+        $this->mockProductMapWithLastSend($db, 42, 1_700_000_500);
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        // Este evento llega DESPUES (por red/concurrencia) pero es de un
+        // momento ANTERIOR (send mas chico) -> debe descartarse.
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 999,
+        ], 1_700_000_000);
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(0, $result->failed, 'Descartar un evento obsoleto no es un error');
+
+        $stockUpdate = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'stock_available'
+        ));
+        $this->assertEmpty($stockUpdate, 'No debe tocar el stock con un evento mas viejo que el ya aplicado');
+    }
+
+    public function test_syncSingle_stock_aplica_evento_mas_nuevo_que_el_ya_aplicado(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['stock_available'] = 5; // ya existe fila de stock -> UPDATE
+        $this->mockProductMapWithLastSend($db, 42, 1_700_000_000);
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 3,
+        ], 1_700_000_500); // mas nuevo que el ya aplicado
+
+        $this->assertEquals(1, $result->updated);
+    }
 }

@@ -40,7 +40,7 @@ class SynkropService
      * Sync quirúrgico: actualiza solo el recurso que cambió según el topic del webhook.
      * Llamado por webhook.php cuando bot-miki resuelve el recurso concreto de Bsale.
      */
-    public function syncSingle(string $topic, array $bsaleData): SyncResult
+    public function syncSingle(string $topic, array $bsaleData, ?int $sendTimestamp = null): SyncResult
     {
         $this->license->getToken();
         $start  = microtime(true);
@@ -79,6 +79,15 @@ class SynkropService
                     break;
                 }
 
+                // #115: concurrency:5 en bot-miki + latencia variable de red puede
+                // hacer que dos webhooks de stock de la MISMA variante se procesen
+                // fuera de orden — el mas viejo llega despues y pisa al mas nuevo
+                // con datos obsoletos. Se descarta (no es error) si ya se aplico
+                // un evento mas reciente para esta variante.
+                if ($sendTimestamp !== null && $this->isStockEventStale($variantId, $sendTimestamp)) {
+                    break;
+                }
+
                 $idProduct = $this->findProductByBsaleVariantId($variantId);
                 if (!$idProduct) {
                     // #114: self-healing — una variante nueva en Bsale no tiene mapa local
@@ -89,6 +98,9 @@ class SynkropService
                 if ($idProduct) {
                     $this->setStockDirect($idProduct, (int)$bsaleData['quantityAvailable']);
                     $result->updated = 1;
+                    if ($sendTimestamp !== null) {
+                        $this->recordStockEventTimestamp($variantId, $sendTimestamp);
+                    }
                 } else {
                     $result->failed++;
                     $result->errors[] = [
@@ -414,6 +426,30 @@ class SynkropService
              WHERE bsale_variant_id = ' . $variantId . ' AND id_shop = ' . $this->idShop
         );
         return $id ?: null;
+    }
+
+    /**
+     * #115: true si ya se aplico un evento de stock mas reciente para esta
+     * variante — el evento actual (mas viejo, llegado tarde por
+     * concurrencia/red) debe descartarse en vez de pisar el dato bueno.
+     */
+    private function isStockEventStale(int $variantId, int $sendTimestamp): bool
+    {
+        $lastApplied = Db::getInstance()->getValue(
+            'SELECT last_stock_event_send FROM `' . _DB_PREFIX_ . 'synkrop_product_map`
+             WHERE bsale_variant_id = ' . $variantId . ' AND id_shop = ' . $this->idShop
+        );
+        return $lastApplied !== null && $lastApplied !== false && (int)$lastApplied > $sendTimestamp;
+    }
+
+    /** #115: registra el timestamp del evento de stock recien aplicado para esta variante. */
+    private function recordStockEventTimestamp(int $variantId, int $sendTimestamp): void
+    {
+        Db::getInstance()->update(
+            'synkrop_product_map',
+            ['last_stock_event_send' => $sendTimestamp],
+            'bsale_variant_id = ' . $variantId . ' AND id_shop = ' . $this->idShop
+        );
     }
 
     /**

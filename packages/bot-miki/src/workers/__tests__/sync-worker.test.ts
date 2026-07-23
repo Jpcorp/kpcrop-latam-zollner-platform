@@ -115,6 +115,20 @@ describe('processWebhookEvent', () => {
       expect(JSON.parse(fetchOpts.body)).toEqual({ topic: 'stock', bsaleData: stockData });
     });
 
+    it('#115: incluye send en el payload quirurgico (para descartar eventos fuera de orden)', async () => {
+      const stockData = { id: 88765, quantityAvailable: 5, variant: { id: 9506, href: '' } };
+      const jobDataWithSend = { ...baseJobData, send: 1_700_000_000 };
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: stockData });
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+      await processWebhookEvent(jobDataWithSend, mockBsale);
+
+      const [, fetchOpts] = mockFetch.mock.calls[0];
+      const body = JSON.parse(fetchOpts.body);
+      expect(body.send).toBe(1_700_000_000);
+    });
+
     it('envía X-Synkrop-Secret correcto en el header', async () => {
       mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
       mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'stock', data: {} });

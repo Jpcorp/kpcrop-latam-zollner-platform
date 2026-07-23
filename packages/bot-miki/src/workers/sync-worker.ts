@@ -28,6 +28,10 @@ export interface SyncJobData {
   resourceId?: string;
   topic?: string;
   action?: string;
+  // #115: timestamp (unix) de cuando Bsale mando el webhook — permite al CMS
+  // descartar eventos de stock que se procesan fuera de orden (concurrency:5
+  // + latencia variable de red puede hacer que el mas viejo llegue despues).
+  send?: number;
 }
 
 export function startSyncWorker() {
@@ -158,7 +162,7 @@ export async function processWebhookEvent(
     stock: 'stock', price: 'prices', product: 'products', variant: 'products',
   };
   const body = resolved.data !== null
-    ? { topic: resolved.topic, bsaleData: resolved.data }
+    ? { topic: resolved.topic, bsaleData: resolved.data, send: data.send }
     : { entity: topicToEntity[data.topic ?? ''] ?? 'products' };
 
   await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId, body);
