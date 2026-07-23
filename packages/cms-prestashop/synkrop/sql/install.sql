@@ -54,10 +54,15 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_images` (
     `id`            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     `id_product`    INT UNSIGNED NOT NULL,
     `id_image`      INT UNSIGNED NOT NULL,
+    -- source_url puede superar 191 bytes en utf8mb4 (limite de indice en
+    -- MySQL/InnoDB con ROW_FORMAT no-dynamico) — se indexa por prefijo.
     `source_url`    VARCHAR(1000) NOT NULL,
     `imported_at`   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    KEY `idx_product` (`id_product`)
+    -- #115: sin esto, nada impedia reimportar la misma imagen del mismo
+    -- producto mas de una vez (justo lo que el comentario de arriba dice
+    -- que esta tabla existe para evitar).
+    UNIQUE KEY `uk_product_source` (`id_product`, `source_url`(191))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Historial de sincronizaciones (para mostrar en backoffice)
