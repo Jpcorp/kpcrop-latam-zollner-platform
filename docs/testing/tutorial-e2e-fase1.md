@@ -48,10 +48,13 @@ humana · `cancelled` → anulado.
 5. En el panel Bsale: Documentos → verás la **NOTA VENTA** con el total exacto del
    checkout y RUT `66.666.666-6` (boleta = sin datos del comprador, por diseño).
 6. En Bsale, **emite la boleta** desde la nota (los datos se heredan).
-7. Botón **[Verificar emisiones]**: ⚠️ en el sandbox NO cerrará el pedido — la
-   boleta del sandbox es "manual, no válida al SII" y el matching exige documento
-   tributario (con código SII). En producción con boleta electrónica este paso pasa
-   la fila a `closed` y el pedido a "Documentado en Bsale" automáticamente.
+7. Botón **[Verificar emisiones]**: con "Modo prueba" **apagado** (default) NO
+   cerrará el pedido en sandbox — la boleta del sandbox es "manual, no válida al
+   SII" y el matching exige documento tributario (con código SII). Con "Modo
+   prueba" **prendido** (Admin → Módulos → Synkrop → Configurar), acepta la boleta
+   manual como emisión válida y cierra el pedido solo (fila → `closed`, pedido →
+   "Documentado en Bsale"). En producción, con boleta electrónica real y el flag
+   apagado, este paso cierra el ciclo igual.
 
 **Qué validaste**: hook → cola → generación → emisión humana → (cierre en prod).
 
@@ -164,8 +167,11 @@ bash ssh/bsale_sandbox.sh raw "documents.json?limit=20"
 ## Limitaciones conocidas del sandbox
 
 1. **Sin documentos tributarios**: todos los tipos son "manuales, no válidos al
-   SII" → [Verificar emisiones] nunca matchea en sandbox. El cierre automático solo
-   es observable en producción (o cuando exista el flag "modo prueba", pendiente).
+   SII" → [Verificar emisiones] nunca matchea en sandbox por defecto. Desde v1.2.0
+   (21-jul) existe el switch **"Modo prueba"** en Admin → Módulos → Synkrop →
+   Configurar: activado, acepta cualquier documento manual como emisión válida y
+   permite observar el cierre completo del ciclo también en sandbox. Dejarlo
+   apagado en producción (comportamiento original, exige documento tributario real).
 2. **La vista "detalle" del panel** a veces dice "no posee detalle disponible" para
    notas creadas por API — es cosmético: el PDF y la API muestran las líneas bien.
 3. El sandbox se puede regenerar en https://account.bsale.dev/users/create; si

@@ -280,7 +280,7 @@ class Synkrop extends Module
 
         $data = [
             'bsale_price_list_id'  => $priceList,
-            'bsale_office_id'      => $officeId ?: 'NULL',
+            'bsale_office_id'      => $officeId ?: null,
             'daemon_api_key'       => pSQL($apiKey),
             'sync_orders'          => $syncOrders,
             'order_trigger_states' => pSQL($triggerStates),
@@ -297,7 +297,9 @@ class Synkrop extends Module
         Db::getInstance()->update(
             'synkrop_config',
             $data,
-            'id_shop = ' . (int)$this->context->shop->id
+            'id_shop = ' . (int)$this->context->shop->id,
+            0,
+            true
         );
 
         return $this->displayConfirmation($this->l('Configuracion guardada correctamente.'));
