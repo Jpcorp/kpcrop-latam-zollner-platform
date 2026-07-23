@@ -12,13 +12,11 @@ class LicenseClient
 {
     private $daemonUrl;
     private $apiKey;
-    private $tenantId;
 
-    public function __construct(string $daemonUrl, string $apiKey, string $tenantId)
+    public function __construct(string $daemonUrl, string $apiKey)
     {
         $this->daemonUrl = rtrim($daemonUrl, '/');
         $this->apiKey    = $apiKey;
-        $this->tenantId  = $tenantId;
     }
 
     /**

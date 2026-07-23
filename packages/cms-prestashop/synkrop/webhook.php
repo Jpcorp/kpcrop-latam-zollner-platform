@@ -103,11 +103,9 @@ register_shutdown_function(function () use (&$logWritten, &$syncResult, $syncEnt
 try {
     $decryptedToken = Synkrop::decryptToken($fullConfig['bsale_api_token']);
     $bsale   = new BsaleApiClient($decryptedToken);
-    $license = new LicenseClient(
-        SYNKROP_DAEMON_URL,
-        $fullConfig['daemon_api_key'],
-        md5(SYNKROP_DAEMON_URL . $fullConfig['daemon_api_key'])
-    );
+    // #99: LicenseClient ya no toma tenantId — nunca se usaba (la request real
+    // solo manda X-API-Key), y el hash md5 no coincidia con licenses.tenant_id.
+    $license = new LicenseClient(SYNKROP_DAEMON_URL, $fullConfig['daemon_api_key']);
     $service = new SynkropService($bsale, $license, 1);
 
     $syncResult = $isDelete
@@ -160,8 +158,9 @@ if ($jobId) {
         'stock' => 'stock', 'variant' => 'products', 'product' => 'products',
         'price' => 'prices', 'products' => 'products', 'prices' => 'prices',
     ];
+    // #99: sin tenantId — bot-miki lo ignora y lo deriva de X-API-Key (fix #91);
+    // mandar un hash que no coincide con licenses.tenant_id era solo ruido.
     $reportPayload = json_encode([
-        'tenantId'       => md5(SYNKROP_DAEMON_URL . $fullConfig['daemon_api_key']),
         'syncType'       => 'webhook',
         'entityType'     => $topicToEntity[$syncEntity] ?? 'products',
         'status'         => $syncStatus,

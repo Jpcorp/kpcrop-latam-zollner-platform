@@ -45,6 +45,17 @@ describe('runSchedulerTick — idempotencia (#106)', () => {
     vi.clearAllMocks();
   });
 
+  it('#99: usa licenses.tenant_id (no tenant_stores.license_id) en el job encolado', async () => {
+    const addMock = vi.fn().mockResolvedValue(undefined);
+    const queue = { add: addMock } as unknown as Queue;
+
+    vi.setSystemTime(new Date('2026-05-22T14:15:00.000Z'));
+    await runSchedulerTick(queue);
+
+    const [, jobData] = addMock.mock.calls[0];
+    expect(jobData.tenantId).toBe('tenant-1'); // el fixture `job` simula la fila ya con licenses.tenant_id
+  });
+
   it('genera jobId distinto para dos ticks del mismo cron en minutos distintos de la misma hora', async () => {
     const addMock = vi.fn().mockResolvedValue(undefined);
     const queue = { add: addMock } as unknown as Queue;

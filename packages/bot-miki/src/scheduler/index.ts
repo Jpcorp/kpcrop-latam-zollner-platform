@@ -32,7 +32,11 @@ export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void>
       'scheduled_jobs.store_id',
       'scheduled_jobs.entity_type',
       'scheduled_jobs.cron_expression',
-      'tenant_stores.license_id as tenant_id',
+      // #99: antes seleccionaba tenant_stores.license_id (UUID) aliaseado como
+      // tenant_id — no coincidia con licenses.tenant_id (string) que usan
+      // webhooks.ts y sync-report.ts, rompiendo la correlacion por tenant en
+      // sync_events para los jobs de polling.
+      'licenses.tenant_id as tenant_id',
       'licenses.status as license_status',
     ])
     .where('scheduled_jobs.active', '=', true)

@@ -199,8 +199,7 @@ class AdminSynkropController extends ModuleAdminController
             }
         }
 
-        $tenantId = md5(SYNKROP_DAEMON_URL . $apiKey);
-        $client   = new LicenseClient(SYNKROP_DAEMON_URL, $apiKey, $tenantId);
+        $client = new LicenseClient(SYNKROP_DAEMON_URL, $apiKey); // #99: sin tenantId muerto
 
         try {
             $jwt = $client->getToken();
@@ -356,11 +355,7 @@ class AdminSynkropController extends ModuleAdminController
 
         $decryptedToken = Synkrop::decryptToken($config['bsale_api_token']);
         $bsale          = new BsaleApiClient($decryptedToken);
-        $license        = new LicenseClient(
-            SYNKROP_DAEMON_URL,
-            $config['daemon_api_key'],
-            md5(SYNKROP_DAEMON_URL . $config['daemon_api_key'])
-        );
+        $license        = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']); // #99: sin tenantId muerto
 
         return new SynkropService($bsale, $license, (int)$this->context->shop->id);
     }
