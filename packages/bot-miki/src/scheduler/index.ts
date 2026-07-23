@@ -42,7 +42,7 @@ export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void>
   for (const job of jobs) {
     if (!cronMatches(job.cron_expression, now)) continue;
 
-    const windowId       = now.toISOString().slice(0, 13); // "2026-05-22T14"
+    const windowId       = now.toISOString().slice(0, 16); // "2026-05-22T14:15" (#106: granularidad de minuto, no de hora)
     const idempotencyKey = `polling:${job.store_id}:${job.entity_type}:${windowId}`;
 
     await queue.add(
@@ -54,7 +54,7 @@ export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void>
         entityType: job.entity_type,
       },
       {
-        jobId:    idempotencyKey,  // BullMQ deduplica — idempotente por hora
+        jobId:    idempotencyKey,  // BullMQ deduplica — idempotente por minuto
         attempts: 3,
         backoff:  { type: 'exponential', delay: 60_000 },
         removeOnComplete: { age: 86_400 },

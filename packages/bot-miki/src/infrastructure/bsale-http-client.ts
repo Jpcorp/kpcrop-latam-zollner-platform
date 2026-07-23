@@ -29,6 +29,7 @@ export class BsaleHttpClient {
 
     const res = await fetch(`${BASE_URL}${path}`, {
       headers: { access_token: this.accessToken },
+      signal: AbortSignal.timeout(30_000),
     });
 
     if (res.status === 429) {

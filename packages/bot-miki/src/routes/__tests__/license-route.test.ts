@@ -100,7 +100,7 @@ describe('GET /v1/license/token', () => {
     await app.close();
   });
 
-  it('returns 200 with JWT and Cache-Control when license is active', async () => {
+  it('returns 200 with JWT and non-cacheable Cache-Control when license is active (#96)', async () => {
     mockExecuteTakeFirst.mockResolvedValueOnce({
       id: 'lic-1',
       tenant_id: 'tenant-001',
@@ -126,7 +126,9 @@ describe('GET /v1/license/token', () => {
     expect(body.plan).toBe('growth');
     expect(body.maxStores).toBe(3);
     expect(body.features).toContain('sync_products');
-    expect(res.headers['cache-control']).toContain('max-age=240');
+    // #96: la respuesta contiene un JWT bearer — nunca debe cachearse en un
+    // edge/CDN compartido (una cache publica filtraria el token de un tenant a otro).
+    expect(res.headers['cache-control']).toBe('private, no-store');
     await app.close();
   });
 });

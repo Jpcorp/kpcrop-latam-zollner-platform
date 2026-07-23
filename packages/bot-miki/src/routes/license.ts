@@ -67,7 +67,7 @@ export async function licenseRoute(app: FastifyInstance) {
       });
 
       return reply
-        .header('Cache-Control', 'public, max-age=240')
+        .header('Cache-Control', 'private, no-store')
         .send({
           token,
           expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
