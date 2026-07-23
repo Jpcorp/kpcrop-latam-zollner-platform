@@ -105,6 +105,12 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
           jobId:    idempotencyKey,
           attempts: 5,
           backoff:  { type: 'exponential', delay: 30_000 },
+          // #115: sin esto, Redis acumula un job completado por cada webhook
+          // de Bsale para siempre — con feeds de alto volumen (stock/precio
+          // cambiando seguido) crece sin techo. Mismos valores que ya usa
+          // el scheduler para los jobs de polling.
+          removeOnComplete: { age: 86_400 },
+          removeOnFail:     { age: 604_800 },
         },
       );
 

@@ -213,4 +213,28 @@ describe('POST /v1/webhooks/bsale', () => {
     expect(jobOpts.backoff).toEqual({ type: 'exponential', delay: 30_000 });
     await app.close();
   });
+
+  it('#115: limpia jobs completados/fallidos de Redis (removeOnComplete/removeOnFail)', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-3',
+      license_id: 'lic-uuid-3',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 3',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    const [, , jobOpts] = mockQueueAdd.mock.calls[0];
+    expect(jobOpts.removeOnComplete).toEqual({ age: 86_400 });
+    expect(jobOpts.removeOnFail).toEqual({ age: 604_800 });
+    await app.close();
+  });
 });
