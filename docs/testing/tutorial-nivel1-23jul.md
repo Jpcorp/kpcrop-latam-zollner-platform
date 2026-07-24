@@ -15,25 +15,44 @@ a mano.
 | Panel Synkrop | Admin → Módulos → Synkrop → Configurar (toggles) / Catálogo → Synkrop (sync manual) |
 | bot-miki local | http://localhost:3000 (Swagger en `/docs`, pide `X-Admin-Key`) |
 | Panel sandbox Bsale | https://account.bsale.dev |
+| Mailhog (correo capturado) | http://localhost:8025 |
 
-**Ya apliqué las 2 migraciones nuevas** (`degraded_manual_sync_at`, `sync_categories` +
-`category_parent_id`, tabla `synkrop_category_map`) contra el MySQL local — no hace falta que
-las corras vos.
+**Ya apliqué las migraciones nuevas** (`degraded_manual_sync_at`, `sync_categories` +
+`category_parent_id` + tabla `synkrop_category_map`, y `005_add_polling_sync_type.sql` en
+bot-miki) contra las bases locales — no hace falta que las corras vos si tu checkout es de
+después del commit `57de5c0`.
+
+**`SYNKROP_DAEMON_URL`**: si tu checkout es de antes del commit `4da435f`, el plugin local
+apunta hardcodeado a producción (`https://miki.keepcrop.com`) en vez de a bot-miki local —
+cualquier validación de licencia da 404. El `docker-compose.yml` de `cms-prestashop` ya
+setea `SYNKROP_DAEMON_URL=http://host.docker.internal:3000` para el contenedor de PS.
 
 ### Arrancar todo
 
 ```bash
-# 1. PrestaShop (si no está arriba)
+# 1. PrestaShop + Mailhog (si no están arriba)
 cd packages/cms-prestashop && docker compose up -d
 
 # 2. Postgres + Redis de bot-miki (raíz del repo)
 cd ../.. && docker compose up postgres redis -d
 
-# 3. bot-miki en modo dev (deja esta terminal corriendo)
+# 3. bot-miki: COMPILAR primero (el script "dev" solo hace `node --watch
+#    dist/*.js`, NO compila TypeScript — si tocaste código y no reconstruiste,
+#    vas a estar probando una version vieja sin darte cuenta)
+pnpm --filter bot-miki build
+
+# 4. bot-miki en modo dev (deja esta terminal corriendo). OJO: "pnpm dev" no
+#    carga el .env solo (no hay dotenv en el proyecto) -- si te tira
+#    "Variables de entorno invalidas", exportá las variables de
+#    packages/bot-miki/.env en tu shell antes de correrlo.
 pnpm --filter bot-miki dev
 ```
 
 Confirmá que responde: `curl http://localhost:3000/health` → `{"status":"ok",...}`.
+
+> Si cambiás código de bot-miki mientras probás, `node --watch` reinicia solo con los cambios
+> del `dist/` **ya compilado** — acordate de correr `pnpm --filter bot-miki build` de nuevo
+> antes de reintentar, si no vas a seguir pegándole a la versión vieja.
 
 El `.env` de bot-miki ya tiene todo lo necesario (incluido `TOKEN_ENCRYPTION_KEY`). El seed de
 desarrollo (`002_seed_dev.sql`) ya crea una licencia `dev-tenant-001` (plan `agency`, `api_key
@@ -109,25 +128,24 @@ es el mismo mecanismo que #127).
 
 ## Caso 4 — Notificación al cliente cuando se emite un documento (#128)
 
-Requiere haber avanzado un pedido por el flujo de ventas (ver `tutorial-e2e-fase1.md`, Caso 1,
-hasta el paso de **[Verificar emisiones]** con la boleta ya emitida en Bsale sandbox).
+El `docker-compose.yml` local ya trae **Mailhog** (contenedor `kpcrop-ps178-mailhog`, UI en
+http://localhost:8025) — PS está configurado para mandar el correo saliente ahí en vez de a un
+MTA real. Si tu entorno es más viejo que el 24-jul-2026, corré `docker compose up -d mailhog`
+y aplicá la config de `docker/post-install.sh` (bloque "Correo saliente → Mailhog") a mano una
+vez.
 
-1. Completá el Caso 1 de `tutorial-e2e-fase1.md` hasta que la fila pase a `emitted`/`closed`.
-2. El envío de email depende de cómo tengas configurado el correo saliente de PS local
-   (Preferencias → Correo). Si está en modo **"Guardar en un archivo"**, revisá
-   `var/logs/mail/` dentro del contenedor de PS:
-   ```bash
-   docker exec kpcrop-prestashop-178 sh -c "ls -la /var/www/html/var/logs/mail/ 2>&1 | tail -5"
-   ```
-3. Buscá el archivo más reciente y confirmá que el asunto sea **"Tu documento de compra está
-   listo"** y que el cuerpo tenga el número de documento y el link de descarga.
-4. Si no tenés el correo configurado en modo archivo/SMTP de prueba, alternativa: confirmá
-   igual que el pedido cerró bien (la fila llegó a `emitted`/`closed` sin quedar en `error`) —
-   eso ya prueba que un email fallido no bloquea el flujo (el punto central de #128), aunque no
-   veas el contenido del mail.
+1. Avanzá un pedido por el flujo de ventas (ver `tutorial-e2e-fase1.md`, Caso 1) hasta
+   **[Verificar emisiones]** con la boleta ya emitida en Bsale sandbox — la fila debe pasar a
+   `emitted`/`closed`.
+2. Abrí **http://localhost:8025** — debería aparecer un correo nuevo.
+3. Confirmá: asunto **"Tu documento de compra está listo"**, destinatario el cliente real de
+   la orden, cuerpo con el número de documento y el link de descarga (HTML y texto plano).
+4. Sin Mailhog (o si preferís no configurarlo), alternativa: confirmá igual que el pedido
+   cerró bien (`emitted`/`closed`, no `error`) — eso ya prueba que un email fallido no bloquea
+   el flujo (el punto central de #128), aunque no veas el contenido.
 
-**Qué validaste**: el cliente final es notificado cuando su documento está listo, y un fallo de
-email nunca bloquea el cierre del pedido.
+**Qué validaste**: el cliente final es notificado cuando su documento está listo (contenido
+real confirmado vía Mailhog), y un fallo de email nunca bloquea el cierre del pedido.
 
 ---
 
@@ -184,6 +202,14 @@ El seed de desarrollo agrega un job de `stock` cada 15 minutos. Para no esperar:
 **Qué validaste**: el worker pagina el catálogo completo (no solo los primeros 50 productos) y
 solo despacha al CMS las variantes que realmente cambiaron.
 
+> **Nota (23-jul, post-recorrido en vivo):** este caso encontró y arregló 2 bugs reales que
+> hacían que el polling automático estuviera completamente roto (nunca se había ejercitado un
+> tick real antes de esta prueba manual): el `jobId` del scheduler usaba `:`, que BullMQ
+> rechaza, y `sync_events.sync_type` no incluía `'polling'` en su CHECK constraint — lo segundo
+> **crasheaba todo el proceso de bot-miki** cuando un job de polling caía en dead-letter. Ambos
+> arreglados (commit `57de5c0`) — si estás en un checkout más viejo, actualizá.
+
 ---
 
-*Escrito 23-jul-2026, contra el estado del repo en el commit `e5ce1d9`.*
+*Escrito 23-jul-2026, contra el estado del repo en el commit `e5ce1d9`; actualizado el mismo
+día tras el recorrido en vivo (commits `4da435f`, `57de5c0`, Mailhog).*

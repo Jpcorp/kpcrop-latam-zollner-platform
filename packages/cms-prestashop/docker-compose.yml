@@ -63,6 +63,16 @@ services:
       retries: 30
       start_period: 60s     # PS tarda ~3 min en instalar la primera vez
 
+  # ── Mailhog: captura el correo saliente de PS para poder verlo (Caso 4
+  #    del tutorial de pruebas manuales — Mail::Send() no tiene MTA real
+  #    en un contenedor PS bare) ──────────────────────────────────────────
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: kpcrop-ps178-mailhog
+    ports:
+      - "8025:8025"   # UI web — ver los correos capturados
+      - "1025:1025"   # SMTP — PS envia acá
+
   # ── Init: instala tablas synkrop + seed ─────────────────────────────────
   ps-init:
     image: mariadb:10.6

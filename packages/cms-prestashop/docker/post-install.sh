@@ -31,6 +31,19 @@ echo "[ps-init] Aplicando seed de desarrollo..."
 sed "s/PREFIX_/${DB_PREFIX}/g" /seed-dev.sql | $MYSQL
 echo "[ps-init] ✓ Seed aplicado"
 
+# ── Correo saliente → Mailhog (para poder ver el contenido real de los
+#    emails de synkrop, ej. notifyDocumentEmitted, sin un MTA real) ───────────
+echo "[ps-init] Configurando correo saliente hacia Mailhog..."
+$MYSQL -e "
+UPDATE ${DB_PREFIX}configuration SET value = '2'       WHERE name = 'PS_MAIL_METHOD';
+UPDATE ${DB_PREFIX}configuration SET value = 'mailhog'  WHERE name = 'PS_MAIL_SERVER';
+UPDATE ${DB_PREFIX}configuration SET value = '1025'     WHERE name = 'PS_MAIL_SMTP_PORT';
+UPDATE ${DB_PREFIX}configuration SET value = ''         WHERE name = 'PS_MAIL_USER';
+UPDATE ${DB_PREFIX}configuration SET value = ''         WHERE name = 'PS_MAIL_PASSWD';
+UPDATE ${DB_PREFIX}configuration SET value = 'off'      WHERE name = 'PS_MAIL_SMTP_ENCRYPTION';
+"
+echo "[ps-init] ✓ Correo apuntando a Mailhog (UI: http://localhost:8025)"
+
 echo ""
 echo "═══════════════════════════════════════════════════════"
 echo "  PrestaShop listo para desarrollo"
