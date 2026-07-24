@@ -103,7 +103,7 @@ class LicenseClient
         }
 
         if ($httpCode === 402) {
-            throw new LicenseException('Licencia expirada o suspendida. Renueva en kpcrop.com/billing', 402);
+            throw new LicenseException('Licencia expirada o suspendida. Renueva en www.keepcrop.com', 402);
         }
 
         if ($httpCode >= 500) {

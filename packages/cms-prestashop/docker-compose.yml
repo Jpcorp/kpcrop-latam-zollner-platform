@@ -48,6 +48,8 @@ services:
       ADMIN_PASSWD:         ${PS_ADMIN_PASSWD:-Admin1234!}
       PS_FOLDER_ADMIN:      "admin-dev"
       PS_FOLDER_INSTALL:    "install-dev"
+      # Synkrop: apuntar a bot-miki local en vez de produccion (ver #115/synkrop.php)
+      SYNKROP_DAEMON_URL:   "http://host.docker.internal:3000"
     ports:
       - "8080:80"
     volumes:

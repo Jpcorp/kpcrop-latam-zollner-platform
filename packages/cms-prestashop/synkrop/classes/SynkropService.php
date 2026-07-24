@@ -244,7 +244,7 @@ class SynkropService
                 throw new LicenseException(
                     'Licencia vencida o suspendida — el sync manual está limitado a 1 vez cada ' .
                     self::DEGRADED_MANUAL_SYNC_HOURS . "h mientras tanto. Próximo disponible: {$nextAvailable} UTC. " .
-                    'Renueva en kpcrop.com/billing para restablecer el sync automático.',
+                    'Renueva en www.keepcrop.com para restablecer el sync automático.',
                     402
                 );
             }

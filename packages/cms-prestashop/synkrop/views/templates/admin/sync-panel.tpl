@@ -21,7 +21,10 @@
       <i class="icon-warning-sign"></i>&nbsp;{l s='Licencia vencida o suspendida' mod='synkrop'}
     </div>
     <div class="panel-body">
-      <p style="margin-bottom:0">{$license_banner|escape:'html':'UTF-8'}</p>
+      <p>{$license_banner|escape:'html':'UTF-8'}</p>
+      <a href="https://www.keepcrop.com" target="_blank" rel="noopener" class="btn btn-danger">
+        <i class="icon-external-link"></i>&nbsp;{l s='Renovar licencia' mod='synkrop'}
+      </a>
     </div>
   </div>
   {/if}

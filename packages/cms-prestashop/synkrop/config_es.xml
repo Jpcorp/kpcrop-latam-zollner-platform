@@ -2,7 +2,7 @@
 <module>
     <name>synkrop</name>
     <displayName><![CDATA[Synkrop]]></displayName>
-    <version><![CDATA[1.0.0]]></version>
+    <version><![CDATA[1.2.0]]></version>
     <description><![CDATA[Sincroniza productos, precios y stock desde Bsale ERP a tu tienda PrestaShop.]]></description>
     <author><![CDATA[kpcrop-latam]]></author>
     <tab><![CDATA[administration]]></tab>

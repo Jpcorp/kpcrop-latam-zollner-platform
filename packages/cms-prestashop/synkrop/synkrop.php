@@ -8,7 +8,11 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-define('SYNKROP_DAEMON_URL', 'https://miki.keepcrop.com');
+// Configurable via variable de entorno del servidor (SYNKROP_DAEMON_URL) para
+// poder apuntar a un bot-miki local en desarrollo sin tocar este archivo — mismo
+// patron que _PS_ADMIN_DIR_ en webhook.php (#115). El fallback preserva el
+// valor de produccion.
+define('SYNKROP_DAEMON_URL', getenv('SYNKROP_DAEMON_URL') ?: 'https://miki.keepcrop.com');
 
 // Autoload de clases del modulo
 require_once __DIR__ . '/classes/BsaleApiClient.php';

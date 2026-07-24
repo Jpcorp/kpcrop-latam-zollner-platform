@@ -37,7 +37,7 @@ async function resolveAgencyLicense(
   if (license.status !== 'active') {
     reply.code(402).send({
       code: 'LICENSE_EXPIRED',
-      message: `Licencia ${license.status}. Renueva en kpcrop.com/billing`,
+      message: `Licencia ${license.status}. Renueva en www.keepcrop.com`,
     });
     return null;
   }
