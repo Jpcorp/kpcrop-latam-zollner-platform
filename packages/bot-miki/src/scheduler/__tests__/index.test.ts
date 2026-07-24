@@ -93,8 +93,11 @@ describe('runSchedulerTick — idempotencia (#106)', () => {
     // Antes del fix, ambos ticks caian en la misma ventana de HORA ("...T14")
     // y BullMQ deduplicaba el segundo -> el cron */15 corria 1 vez/hora en vez de 4.
     expect(jobId1).not.toBe(jobId2);
-    expect(jobId1).toContain('14:15');
-    expect(jobId2).toContain('14:30');
+    // #106/hallazgo 23-jul: sin ":" -- BullMQ rechaza jobId custom con ":".
+    expect(jobId1).toContain('1415');
+    expect(jobId2).toContain('1430');
+    expect(jobId1).not.toContain(':');
+    expect(jobId2).not.toContain(':');
   });
 
   it('genera el mismo jobId para dos ticks dentro del mismo minuto (dedup correcto)', async () => {

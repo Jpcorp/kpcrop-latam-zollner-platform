@@ -44,7 +44,9 @@ CREATE TABLE IF NOT EXISTS sync_events (
     tenant_id         VARCHAR(100) NOT NULL,
     store_id          UUID REFERENCES tenant_stores(id) ON DELETE SET NULL,
     sync_type         VARCHAR(20) NOT NULL
-                          CHECK (sync_type IN ('manual','auto','webhook','dropshipping')),
+                          -- 'polling' agregado en 005_add_polling_sync_type.sql (usado por
+                          -- SyncJobData.syncType, faltaba en el constraint original)
+                          CHECK (sync_type IN ('manual','auto','webhook','dropshipping','polling')),
     entity_type       VARCHAR(20) NOT NULL
                           CHECK (entity_type IN ('products','prices','stock',
                                                  'clients','orders','guides')),

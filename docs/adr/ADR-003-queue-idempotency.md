@@ -20,14 +20,24 @@ Cada job en la cola tiene una **clave de idempotencia** unica. Si un job con la 
 
 ### Estructura de la Clave de Idempotencia
 
+> ⚠️ **Separador `_`, no `:`.** BullMQ rechaza `:` en un `jobId` custom
+> ("Custom Id cannot contain :" — lo usa como separador interno de key en
+> Redis). Encontrado en pruebas manuales (23-jul-2026): el jobId de polling
+> usaba `:` (copiado literal de una version anterior de este ADR) y el
+> scheduler fallaba en **cada tick, para cada job**, silenciosamente (el
+> error solo se logueaba via `.catch(console.error)`, sin cortar el proceso)
+> — el polling automatico nunca llegaba a encolarse. El jobId de webhook ya
+> usaba `_` correctamente en el código real; este documento tenía el
+> ejemplo desactualizado.
+
 **Jobs de polling (scheduler):**
 ```
-polling:{storeId}:{entityType}:{windowId}
+polling_{storeId}_{entityType}_{windowId}
 ```
 
 **Jobs de webhook:**
 ```
-webhook:{storeId}:{topic}:{resourceId}:{send}
+webhook_{storeId}_{topic}_{resourceId}_{send}
 ```
 
 | Parte | Descripcion | Ejemplo |
@@ -37,16 +47,16 @@ webhook:{storeId}:{topic}:{resourceId}:{send}
 | `topic` | Topic del webhook de Bsale | `product` / `variant` / `stock` / `price` |
 | `resourceId` | ID del recurso en Bsale | `952` |
 | `send` | Unix timestamp del evento (del payload del webhook) | `1716393600` |
-| `windowId` | Hora ISO (ventana de deduplicacion para polling) | `2026-05-22T14` |
+| `windowId` | Hora+minuto ISO sin separadores (ventana de deduplicacion para polling) | `202605221415` |
 
 **Ejemplo polling:**
 ```
-polling:a1b2c3d4-...-uuid:products:2026-05-22T14
+polling_a1b2c3d4uuid_products_202605221415
 ```
 
 **Ejemplo webhook:**
 ```
-webhook:a1b2c3d4-...-uuid:product:952:1716393600
+webhook_a1b2c3d4-...-uuid_product_952_1716393600
 ```
 
 > **Por que `storeId` y no `tenantId`:** Un tenant puede tener multiples tiendas. La unidad de sync es la tienda, no el tenant. Usar `tenantId` mezclaría jobs de tiendas distintas bajo la misma clave.
@@ -57,8 +67,8 @@ webhook:a1b2c3d4-...-uuid:product:952:1716393600
 
 ```typescript
 // Polling — packages/bot-miki/src/scheduler/index.ts (implementacion real)
-const windowId       = now.toISOString().slice(0, 13); // "2026-05-22T14"
-const idempotencyKey = `polling:${job.store_id}:${job.entity_type}:${windowId}`;
+const windowId       = now.toISOString().slice(0, 16).replace(/[-:]/g, ''); // "202605221415"
+const idempotencyKey = `polling_${job.store_id}_${job.entity_type}_${windowId}`;
 
 await queue.add('polling', { storeId, tenantId, syncType: 'polling', entityType }, {
   jobId:    idempotencyKey,           // BullMQ deduplica por jobId

@@ -78,8 +78,16 @@ export async function runSchedulerTick(queue: Queue<SyncJobData>): Promise<void>
   for (const job of jobs) {
     if (!cronMatches(job.cron_expression, now)) continue;
 
-    const windowId       = now.toISOString().slice(0, 16); // "2026-05-22T14:15" (#106: granularidad de minuto, no de hora)
-    const idempotencyKey = `polling:${job.store_id}:${job.entity_type}:${windowId}`;
+    // #106: granularidad de minuto, no de hora. BullMQ rechaza ":" en jobId
+    // custom ("Custom Id cannot contain :", lo usa como separador interno de
+    // key en Redis) -- ni el separador ":" entre partes ni el que trae
+    // toISOString() en la porcion de hora (ej. "14:15") pueden ir. Encontrado
+    // en pruebas manuales: el scheduler fallaba en CADA tick para CADA job que
+    // matcheaba el cron, silenciosamente (el error solo se logueaba via
+    // .catch(console.error) en runIfLeader, sin cortar el proceso) -- el
+    // polling automatico nunca se encolaba.
+    const windowId       = now.toISOString().slice(0, 16).replace(/[-:]/g, ''); // "202605221415"
+    const idempotencyKey = `polling_${job.store_id}_${job.entity_type}_${windowId}`;
 
     await queue.add(
       'polling',

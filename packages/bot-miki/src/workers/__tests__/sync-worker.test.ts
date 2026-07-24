@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { Job } from 'bullmq';
 import type { BsaleHttpClient } from '../../infrastructure/bsale-http-client.js';
 import type { SyncJobData } from '../sync-worker.js';
 
@@ -64,7 +65,7 @@ vi.stubGlobal('fetch', mockFetch);
 
 // ── Import bajo test (después de los mocks) ───────────────────────────────────
 
-const { processWebhookEvent, processManualSync, processPollingCycle, PermanentSyncError } = await import('../sync-worker.js');
+const { processWebhookEvent, processManualSync, processPollingCycle, handleJobFailed, PermanentSyncError } = await import('../sync-worker.js');
 
 // ── Fixtures ──────────────────────────────────────────────────────────────────
 
@@ -522,5 +523,46 @@ describe('processPollingCycle (#79: diff contra bsale_variant_snapshots)', () =>
 
     await expect(processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1'))
       .rejects.toThrow('no tiene cms_url configurada');
+  });
+});
+
+describe('handleJobFailed (hallazgo 23-jul: dead-letter no debe poder tumbar el proceso)', () => {
+  const deadLetterJob = {
+    id: 'job-1',
+    attemptsMade: 5,
+    opts: { attempts: 5 },
+    data: { tenantId: 'allgrano-cl', storeId: 'store-uuid-1', syncType: 'polling', entityType: 'stock' },
+  } as unknown as Job<SyncJobData>;
+
+  it('no hace nada si el job todavia tiene reintentos pendientes (no es dead-letter)', async () => {
+    const job = { ...deadLetterJob, attemptsMade: 2, opts: { attempts: 5 } } as unknown as Job<SyncJobData>;
+
+    await handleJobFailed(job, new Error('timeout transitorio'));
+
+    expect(mockInsertExecute).not.toHaveBeenCalled();
+  });
+
+  it('no hace nada si job es undefined', async () => {
+    await handleJobFailed(undefined, new Error('no deberia importar'));
+    expect(mockInsertExecute).not.toHaveBeenCalled();
+  });
+
+  it('registra el dead-letter cuando se agotaron los reintentos', async () => {
+    await handleJobFailed(deadLetterJob, new Error('Bsale API 500'));
+
+    expect(mockInsertExecute).toHaveBeenCalledTimes(1);
+  });
+
+  // #115-bis: el hallazgo real de hoy -- si el INSERT mismo falla (ej. violacion
+  // de constraint), antes esto era un unhandled rejection que tumbaba bot-miki
+  // completo. Ahora debe quedar contenido acá.
+  it('no relanza si el INSERT del dead-letter falla (constraint, conexion, etc.)', async () => {
+    mockInsertExecute.mockRejectedValueOnce(new Error('violates check constraint "sync_events_sync_type_check"'));
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(handleJobFailed(deadLetterJob, new Error('Bsale API 500'))).resolves.toBeUndefined();
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    consoleErrorSpy.mockRestore();
   });
 });

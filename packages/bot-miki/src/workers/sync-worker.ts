@@ -34,19 +34,23 @@ export interface SyncJobData {
   send?: number;
 }
 
-export function startSyncWorker() {
-  const redis = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null });
+/**
+ * #115-bis (hallazgo 23-jul): un INSERT sin try/catch acá es un unhandled
+ * rejection en un event handler de BullMQ -> tumba TODO el proceso, no
+ * solo el job. Encontrado en pruebas manuales via una violacion real del
+ * CHECK constraint (sync_type='polling' faltaba, ver migracion 005) — el
+ * registro del dead-letter en si crasheaba bot-miki para TODOS los
+ * tenants, no solo el del job que fallo. El intento original (#95) ya
+ * manejaba el conflicto de idempotency_key con onConflict; esto cubre
+ * cualquier otro error del INSERT (constraint, conexion, etc.). Exportada
+ * para poder testear el manejo del error sin levantar un Worker real.
+ */
+export async function handleJobFailed(job: Job<SyncJobData> | undefined, error: Error): Promise<void> {
+  if (!job) return;
+  const isDeadLetter = job.attemptsMade >= (job.opts.attempts ?? 1);
+  if (!isDeadLetter) return;
 
-  const worker = new Worker<SyncJobData>('sync', processJob, {
-    connection: redis,
-    concurrency: 5,
-  });
-
-  worker.on('failed', async (job, error) => {
-    if (!job) return;
-    const isDeadLetter = job.attemptsMade >= (job.opts.attempts ?? 1);
-    if (!isDeadLetter) return;
-
+  try {
     await db.insertInto('sync_events').values({
       tenant_id:       job.data.tenantId,
       store_id:        job.data.storeId,
@@ -62,7 +66,22 @@ export function startSyncWorker() {
       // en vez de lanzar 23505 dentro del handler 'failed' (rechazo no manejado)
       .onConflict((oc) => oc.column('idempotency_key').doNothing())
       .execute();
+  } catch (dbError) {
+    console.error('[sync-worker] fallo registrando dead-letter en sync_events', {
+      jobId: job.id, originalError: error.message, dbError,
+    });
+  }
+}
+
+export function startSyncWorker() {
+  const redis = new IORedis(config.REDIS_URL, { maxRetriesPerRequest: null });
+
+  const worker = new Worker<SyncJobData>('sync', processJob, {
+    connection: redis,
+    concurrency: 5,
   });
+
+  worker.on('failed', handleJobFailed);
 
   worker.on('error', err => console.error('[sync-worker]', err));
 
