@@ -4,9 +4,10 @@ import type { Queue } from 'bullmq';
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
-const { mockExecuteTakeFirst, mockQueueAdd } = vi.hoisted(() => ({
+const { mockExecuteTakeFirst, mockQueueAdd, mockWhere } = vi.hoisted(() => ({
   mockExecuteTakeFirst: vi.fn(),
   mockQueueAdd: vi.fn().mockResolvedValue(undefined),
+  mockWhere: vi.fn(),
 }));
 
 vi.mock('../../config.js', () => ({
@@ -18,6 +19,7 @@ vi.mock('../../config.js', () => ({
     REDIS_URL: 'redis://localhost:6379',
     JWT_SECRET: 'test_jwt_secret_minimum_32_characters_long',
     BSALE_RATE_LIMIT_RPS: 10,
+    TOKEN_ENCRYPTION_KEY: 'test_token_encryption_key_minimum_32_chars',
   },
 }));
 
@@ -28,7 +30,7 @@ vi.mock('../../infrastructure/database.js', () => {
   chain['selectAll'] = () => chain;
   chain['innerJoin'] = () => chain; // #105: webhooks.ts hace join con licenses
   chain['select'] = () => chain;    // #105: select explicito de columnas tras el join
-  chain['where'] = () => chain;
+  chain['where'] = mockWhere.mockImplementation(() => chain);
   return { db: { selectFrom: () => chain, insertInto: () => chain, values: () => chain, execute: vi.fn().mockResolvedValue([]) } };
 });
 
@@ -67,6 +69,61 @@ describe('POST /v1/webhooks/bsale', () => {
     });
 
     expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('#97: returns 400 when resource points to an endpoint unrelated to the topic', async () => {
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      // topic=product pero resource apunta a un endpoint totalmente distinto —
+      // sin la whitelist, bot-miki haria bsale.get('/v1/clients.json') con el
+      // token del tenant, filtrando datos ajenos al sync.
+      payload: { ...validPayload, topic: 'product', resource: '/v1/clients.json' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('#97: rechaza resource de un topic distinto (variant apuntando a products)', async () => {
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: { ...validPayload, topic: 'variant', resource: '/v2/products/952.json', resourceId: '952' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('#97: acepta la forma coleccion de stock v2 sin id en el path', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-3',
+      license_id: 'lic-uuid-3',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 3',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: { ...validPayload, topic: 'stock', resource: '/v2/stocks.json?variantid=123', resourceId: '123' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
     await app.close();
   });
 
@@ -155,6 +212,92 @@ describe('POST /v1/webhooks/bsale', () => {
 
     const [, , jobOpts] = mockQueueAdd.mock.calls[0];
     expect(jobOpts.backoff).toEqual({ type: 'exponential', delay: 30_000 });
+    await app.close();
+  });
+
+  it('#115: limpia jobs completados/fallidos de Redis (removeOnComplete/removeOnFail)', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-3',
+      license_id: 'lic-uuid-3',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 3',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    const [, , jobOpts] = mockQueueAdd.mock.calls[0];
+    expect(jobOpts.removeOnComplete).toEqual({ age: 86_400 });
+    expect(jobOpts.removeOnFail).toEqual({ age: 604_800 });
+    await app.close();
+  });
+
+  it('#127: filtra por status=active de la licencia antes de encolar', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-5',
+      license_id: 'lic-uuid-5',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 5',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    expect(mockWhere).toHaveBeenCalledWith('l.status', '=', 'active');
+    await app.close();
+  });
+
+  it('#127: con licencia suspendida (query no devuelve store) no encola — igual que tenant desconocido', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce(undefined);
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockQueueAdd).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('#115: incluye send en el job encolado (para descartar eventos de stock fuera de orden)', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-4',
+      license_id: 'lic-uuid-4',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 4',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    const [, jobData] = mockQueueAdd.mock.calls[0];
+    expect(jobData.send).toBe(validPayload.send);
     await app.close();
   });
 });

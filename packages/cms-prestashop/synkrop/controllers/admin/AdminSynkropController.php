@@ -12,6 +12,7 @@ require_once _PS_MODULE_DIR_ . 'synkrop/synkrop.php';
 require_once _PS_MODULE_DIR_ . 'synkrop/classes/BsaleApiClient.php';
 require_once _PS_MODULE_DIR_ . 'synkrop/classes/LicenseClient.php';
 require_once _PS_MODULE_DIR_ . 'synkrop/classes/SynkropService.php';
+require_once _PS_MODULE_DIR_ . 'synkrop/classes/OrderDocumentService.php';
 
 class AdminSynkropController extends ModuleAdminController
 {
@@ -38,6 +39,23 @@ class AdminSynkropController extends ModuleAdminController
 
         $isConfigured = !empty($config['bsale_api_token']) && !empty($config['daemon_api_key']);
 
+        // #127: banner persistente de estado de licencia — no bloquea el panel
+        // (siempre visible, historial y config accesibles), solo informa. Si no
+        // se puede determinar el estado (p.ej. bot-miki caido, ver #128), no se
+        // muestra nada: no es lo mismo indisponibilidad del servicio que
+        // licencia vencida, y no hay que alarmar por una caida transitoria.
+        $licenseBanner = null;
+        if ($isConfigured) {
+            try {
+                $license = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']);
+                $license->getToken();
+            } catch (LicenseException $e) {
+                if ($e->isExpired()) {
+                    $licenseBanner = $e->getMessage();
+                }
+            }
+        }
+
         $shopTz = new DateTimeZone(Configuration::get('PS_TIMEZONE') ?: 'UTC');
         $utcTz  = new DateTimeZone('UTC');
         foreach ($logs as &$log) {
@@ -49,10 +67,49 @@ class AdminSynkropController extends ModuleAdminController
         }
         unset($log);
 
+        // ── Pestaña Ventas: cola de pedidos → documentos Bsale ────────────────
+        $ordersEnabled = (int)($config['sync_orders'] ?? 0) === 1;
+        $orderQueue    = [];
+        $orderCounts   = [];
+
+        if ($ordersEnabled) {
+            $orderQueue = Db::getInstance()->executeS(
+                'SELECT q.*, o.reference AS order_reference
+                 FROM `' . _DB_PREFIX_ . 'synkrop_order_queue` q
+                 LEFT JOIN `' . _DB_PREFIX_ . 'orders` o ON o.id_order = q.id_order
+                 WHERE q.id_shop = ' . (int)$this->context->shop->id . '
+                 ORDER BY q.id DESC LIMIT 100'
+            ) ?: [];
+
+            $adminOrdersLink = $this->context->link->getAdminLink('AdminOrders');
+            foreach ($orderQueue as &$row) {
+                $dt = DateTime::createFromFormat('Y-m-d H:i:s', $row['created_at'], $utcTz);
+                if ($dt) {
+                    $dt->setTimezone($shopTz);
+                    $row['created_at'] = $dt->format('d/m/Y H:i');
+                }
+                $row['order_url'] = $adminOrdersLink . '&id_order=' . (int)$row['id_order'] . '&vieworder';
+                $row['error_message'] = '';
+                if (!empty($row['error_details'])) {
+                    $decoded = json_decode($row['error_details'], true);
+                    $row['error_message'] = is_array($decoded) ? (string)($decoded['message'] ?? '') : '';
+                }
+                $orderCounts[$row['status']] = ($orderCounts[$row['status']] ?? 0) + 1;
+            }
+            unset($row);
+        }
+
         $this->context->smarty->assign([
-            'is_configured' => $isConfigured,
-            'sync_logs'     => $logs,
-            'ajax_url'      => $this->context->link->getAdminLink('AdminSynkrop') . '&ajax=1',
+            'is_configured'         => $isConfigured,
+            'license_banner'        => $licenseBanner,
+            'sync_logs'             => $logs,
+            'ajax_url'              => $this->context->link->getAdminLink('AdminSynkrop') . '&ajax=1',
+            'orders_enabled'        => $ordersEnabled,
+            'order_queue'           => $orderQueue,
+            'order_counts'          => $orderCounts,
+            'config_url'            => $this->context->link->getAdminLink('AdminModules') . '&configure=synkrop',
+            // #87: boton "Categorias" solo visible si la feature esta activada
+            'category_sync_enabled' => (int)($config['sync_categories'] ?? 0) === 1,
         ]);
 
         $this->content = $this->context->smarty->fetch(
@@ -71,7 +128,10 @@ class AdminSynkropController extends ModuleAdminController
 
         try {
             $service = $this->buildSyncService();
-            $result  = $service->sync($entityType);
+            // #127: syncManual (no sync) — con licencia vencida/suspendida permite
+            // seguir operando en modo degradado (limitado a 1x/24h) en vez de
+            // bloquear duro; cli/sync.php (cron) sigue usando sync() sin gracia.
+            $result  = $service->syncManual($entityType);
 
             $this->logSync('manual', $entityType, $result);
 
@@ -122,7 +182,7 @@ class AdminSynkropController extends ModuleAdminController
             if (empty($enc)) {
                 $this->ajaxDie(json_encode(['success' => false, 'message' => 'Token no configurado']));
             }
-            $bsaleToken = Synkrop::decryptToken($enc);
+            $bsaleToken = TokenCipher::decrypt($enc);
         } else {
             $bsaleToken = Tools::getValue('token');
             if (empty($bsaleToken)) {
@@ -162,8 +222,7 @@ class AdminSynkropController extends ModuleAdminController
             }
         }
 
-        $tenantId = md5(SYNKROP_DAEMON_URL . $apiKey);
-        $client   = new LicenseClient(SYNKROP_DAEMON_URL, $apiKey, $tenantId);
+        $client = new LicenseClient(SYNKROP_DAEMON_URL, $apiKey); // #99: sin tenantId muerto
 
         try {
             $jwt = $client->getToken();
@@ -193,7 +252,7 @@ class AdminSynkropController extends ModuleAdminController
             ]));
         }
 
-        $encryptedToken = Synkrop::encryptToken($bsaleToken);
+        $encryptedToken = TokenCipher::encrypt($bsaleToken);
 
         Db::getInstance()->update(
             'synkrop_config',
@@ -211,7 +270,103 @@ class AdminSynkropController extends ModuleAdminController
         ]));
     }
 
+    // ─── AJAX: Ventas — generar notas de venta (modo semi-manual) ─────────────
+
+    public function ajaxProcessGenerateOrderDoc()    {
+        set_time_limit(120);
+
+        try {
+            $service = $this->buildOrderDocumentService();
+        } catch (Exception $e) {
+            $this->ajaxDie(json_encode(['success' => false, 'message' => $e->getMessage()]));
+        }
+
+        $idOrder = (int)Tools::getValue('id_order');
+        if ($idOrder > 0) {
+            $targets = [$idOrder];
+        } else {
+            // Lote: todos los pendientes (y reintentos de error) de la tienda
+            $rows = Db::getInstance()->executeS(
+                'SELECT id_order FROM `' . _DB_PREFIX_ . 'synkrop_order_queue`
+                 WHERE id_shop = ' . (int)$this->context->shop->id . "
+                 AND status IN ('" . OrderDocumentService::STATUS_PENDING . "','" . OrderDocumentService::STATUS_ERROR . "')
+                 ORDER BY id ASC LIMIT 50"
+            ) ?: [];
+            $targets = array_map(function ($r) { return (int)$r['id_order']; }, $rows);
+        }
+
+        if (empty($targets)) {
+            $this->ajaxDie(json_encode(['success' => true, 'generated' => 0, 'failed' => 0,
+                'message' => $this->l('No hay pedidos pendientes de generar.')]));
+        }
+
+        $generated = 0;
+        $failed    = 0;
+        $messages  = [];
+        foreach ($targets as $target) {
+            $result = $service->createSaleNote($target);
+            if ($result['ok']) {
+                $generated++;
+            } else {
+                $failed++;
+            }
+            $messages[] = $result['message'];
+        }
+
+        $this->ajaxDie(json_encode([
+            'success'   => $failed === 0,
+            'generated' => $generated,
+            'failed'    => $failed,
+            'messages'  => array_slice($messages, 0, 20),
+            'message'   => sprintf(
+                $this->l('%d notas de venta generadas, %d con error.'),
+                $generated,
+                $failed
+            ),
+        ]));
+    }
+
+    // ─── AJAX: Ventas — verificar emisiones en Bsale (cierre del ciclo) ───────
+
+    public function ajaxProcessCheckEmissions()    {
+        set_time_limit(120);
+
+        try {
+            $service = $this->buildOrderDocumentService();
+            $summary = $service->checkEmissions();
+            $this->ajaxDie(json_encode([
+                'success' => true,
+                'checked' => $summary['checked'],
+                'emitted' => $summary['emitted'],
+                'closed'  => $summary['closed'],
+                'message' => sprintf(
+                    $this->l('%d notas revisadas: %d emitidas en Bsale, %d pedidos pasados a "Documentado en Bsale".'),
+                    $summary['checked'],
+                    $summary['emitted'],
+                    $summary['closed']
+                ),
+            ]));
+        } catch (Exception $e) {
+            $this->ajaxDie(json_encode(['success' => false, 'message' => $e->getMessage()]));
+        }
+    }
+
     // ─── Helpers privados ─────────────────────────────────────────────────────
+
+    private function buildOrderDocumentService(): OrderDocumentService
+    {
+        $config = $this->getConfig();
+
+        if (empty($config['bsale_api_token'])) {
+            throw new RuntimeException($this->l('Configura el token de Bsale antes de generar documentos.'));
+        }
+        if (!(int)($config['sync_orders'] ?? 0)) {
+            throw new RuntimeException($this->l('El flujo de ventas está desactivado — actívalo en la configuración del módulo.'));
+        }
+
+        $token = TokenCipher::decrypt($config['bsale_api_token']);
+        return new OrderDocumentService(new BsaleApiClient($token), (int)$this->context->shop->id);
+    }
 
     private function buildSyncService(): SynkropService
     {
@@ -221,13 +376,9 @@ class AdminSynkropController extends ModuleAdminController
             throw new RuntimeException($this->l('Configura el token de Bsale y la API Key antes de sincronizar.'));
         }
 
-        $decryptedToken = Synkrop::decryptToken($config['bsale_api_token']);
+        $decryptedToken = TokenCipher::decrypt($config['bsale_api_token']);
         $bsale          = new BsaleApiClient($decryptedToken);
-        $license        = new LicenseClient(
-            SYNKROP_DAEMON_URL,
-            $config['daemon_api_key'],
-            md5(SYNKROP_DAEMON_URL . $config['daemon_api_key'])
-        );
+        $license        = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']); // #99: sin tenantId muerto
 
         return new SynkropService($bsale, $license, (int)$this->context->shop->id);
     }

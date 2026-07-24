@@ -6,7 +6,15 @@
  */
 
 if (!defined('_PS_VERSION_')) {
-    define('_PS_ADMIN_DIR_', dirname(__FILE__, 3) . '/fg0qvkmjnpbs5wl5');
+    // #115: configurable via variable de entorno del servidor
+    // (SYNKROP_PS_ADMIN_DIR) para no depender de un valor fijo en el repo.
+    // El fallback preserva el nombre actual de produccion (strainmachine.com)
+    // para que este cambio sea 100% compatible sin tocar nada del lado del
+    // servidor todavia. Pendiente (accion manual, fuera de este commit):
+    // setear SYNKROP_PS_ADMIN_DIR en la config de PHP/Apache de produccion
+    // con el nombre ofuscado real y, recien ahi, sacar el fallback del repo.
+    $psAdminDir = getenv('SYNKROP_PS_ADMIN_DIR') ?: 'fg0qvkmjnpbs5wl5';
+    define('_PS_ADMIN_DIR_', dirname(__FILE__, 3) . '/' . $psAdminDir);
     $_SERVER['HTTP_HOST']   = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $_SERVER['REQUEST_URI'] = '/';
     require_once dirname(__FILE__, 3) . '/config/config.inc.php';
@@ -37,10 +45,14 @@ $jobId = $_SERVER['HTTP_X_SYNKROP_JOB_ID'] ?? null;
 
 $body = json_decode(file_get_contents('php://input'), true) ?? [];
 
-// Modo quirúrgico: bot-miki resolvió el recurso concreto de Bsale
-$isSurgical = isset($body['bsaleData']) && isset($body['topic']);
+// #109: modo delete — bot-miki no llama a Bsale (el recurso ya no existe, GET
+// daria 404) y manda directo el resourceId de la variante eliminada.
+$isDelete = ($body['action'] ?? null) === 'delete' && isset($body['topic']) && isset($body['resourceId']);
 
-if (!$isSurgical) {
+// Modo quirúrgico: bot-miki resolvió el recurso concreto de Bsale
+$isSurgical = !$isDelete && isset($body['bsaleData']) && isset($body['topic']);
+
+if (!$isSurgical && !$isDelete) {
     // Modo bulk: compatibilidad con sync manual y fallback price
     $entity = $body['entity'] ?? 'stock';
     if (!in_array($entity, ['products', 'stock', 'prices'])) {
@@ -62,7 +74,7 @@ $fullConfig = Db::getInstance()->getRow(
 );
 
 $syncResult  = null;
-$syncEntity  = $isSurgical ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
+$syncEntity  = ($isSurgical || $isDelete) ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
 $syncStatus  = 'failed';
 $syncErrMsg  = null;
 // #93: distingue fallo transitorio (excepción → bot-miki reintenta) de permanente
@@ -97,18 +109,22 @@ register_shutdown_function(function () use (&$logWritten, &$syncResult, $syncEnt
 });
 
 try {
-    $decryptedToken = Synkrop::decryptToken($fullConfig['bsale_api_token']);
+    $decryptedToken = TokenCipher::decrypt($fullConfig['bsale_api_token']);
     $bsale   = new BsaleApiClient($decryptedToken);
-    $license = new LicenseClient(
-        SYNKROP_DAEMON_URL,
-        $fullConfig['daemon_api_key'],
-        md5(SYNKROP_DAEMON_URL . $fullConfig['daemon_api_key'])
-    );
+    // #99: LicenseClient ya no toma tenantId — nunca se usaba (la request real
+    // solo manda X-API-Key), y el hash md5 no coincidia con licenses.tenant_id.
+    $license = new LicenseClient(SYNKROP_DAEMON_URL, $fullConfig['daemon_api_key']);
     $service = new SynkropService($bsale, $license, 1);
 
-    $syncResult = $isSurgical
-        ? $service->syncSingle($body['topic'], $body['bsaleData'])
-        : $service->sync($entity);
+    // #115: send (timestamp del webhook original) permite descartar eventos
+    // de stock que bot-miki procesa fuera de orden.
+    $sendTimestamp = isset($body['send']) ? (int)$body['send'] : null;
+
+    $syncResult = $isDelete
+        ? $service->syncDelete($body['topic'], $body['resourceId'])
+        : ($isSurgical
+            ? $service->syncSingle($body['topic'], $body['bsaleData'], $sendTimestamp)
+            : $service->sync($entity));
 
     $syncStatus = $syncResult->status();
 
@@ -154,8 +170,9 @@ if ($jobId) {
         'stock' => 'stock', 'variant' => 'products', 'product' => 'products',
         'price' => 'prices', 'products' => 'products', 'prices' => 'prices',
     ];
+    // #99: sin tenantId — bot-miki lo ignora y lo deriva de X-API-Key (fix #91);
+    // mandar un hash que no coincide con licenses.tenant_id era solo ruido.
     $reportPayload = json_encode([
-        'tenantId'       => md5(SYNKROP_DAEMON_URL . $fullConfig['daemon_api_key']),
         'syncType'       => 'webhook',
         'entityType'     => $topicToEntity[$syncEntity] ?? 'products',
         'status'         => $syncStatus,

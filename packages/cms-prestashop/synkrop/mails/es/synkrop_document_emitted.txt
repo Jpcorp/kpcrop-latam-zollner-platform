@@ -1,0 +1,8 @@
+Hola {firstname},
+
+Tu documento de compra ya fue emitido.
+
+Numero de documento: {doc_number}
+Puedes descargarlo aqui: {doc_url}
+
+Gracias por tu compra.

@@ -8,12 +8,18 @@ if (!defined('_PS_VERSION_')) {
     exit;
 }
 
-define('SYNKROP_DAEMON_URL', 'https://miki.keepcrop.com');
+// Configurable via variable de entorno del servidor (SYNKROP_DAEMON_URL) para
+// poder apuntar a un bot-miki local en desarrollo sin tocar este archivo — mismo
+// patron que _PS_ADMIN_DIR_ en webhook.php (#115). El fallback preserva el
+// valor de produccion.
+define('SYNKROP_DAEMON_URL', getenv('SYNKROP_DAEMON_URL') ?: 'https://miki.keepcrop.com');
 
 // Autoload de clases del modulo
 require_once __DIR__ . '/classes/BsaleApiClient.php';
 require_once __DIR__ . '/classes/LicenseClient.php';
 require_once __DIR__ . '/classes/SynkropService.php';
+require_once __DIR__ . '/classes/OrderDocumentService.php';
+require_once __DIR__ . '/classes/TokenCipher.php';
 
 class Synkrop extends Module
 {
@@ -21,7 +27,7 @@ class Synkrop extends Module
     {
         $this->name          = 'synkrop';
         $this->tab           = 'administration';
-        $this->version       = '1.0.0';
+        $this->version       = '1.3.0';
         $this->author        = 'kpcrop-latam';
         $this->need_instance = 0;
         $this->bootstrap     = true;
@@ -40,7 +46,11 @@ class Synkrop extends Module
     {
         return parent::install()
             && $this->installTab()
-            && $this->installDb();
+            && $this->installDb()
+            && $this->registerHook('actionOrderStatusPostUpdate')
+            && $this->registerHook('displayPaymentTop')
+            && $this->registerHook('actionFrontControllerSetMedia')
+            && $this->installOrderState();
     }
 
     public function uninstall(): bool
@@ -78,6 +88,37 @@ class Synkrop extends Module
         return $tab->delete();
     }
 
+    /**
+     * Estado de pedido custom "Documentado en Bsale": destino del ciclo de ventas
+     * (se asigna cuando el usuario Bsale emite la boleta/factura → gatilla despacho).
+     */
+    private function installOrderState(): bool
+    {
+        $idState = (int)Configuration::get('SYNKROP_OS_DOCUMENTED');
+        if ($idState && Validate::isLoadedObject(new OrderState($idState))) {
+            return true; // reinstalación: reutiliza el estado existente
+        }
+
+        $state = new OrderState();
+        foreach (Language::getLanguages(true) as $lang) {
+            $state->name[$lang['id_lang']] = 'Documentado en Bsale';
+        }
+        $state->color       = '#3498DB';
+        $state->module_name = $this->name;
+        $state->logable     = true;
+        $state->send_email  = false;
+        $state->hidden      = false;
+        $state->paid        = false;
+        $state->invoice     = false;
+        $state->delivery    = false;
+        $state->shipped     = false;
+
+        if (!$state->add()) {
+            return false;
+        }
+        return Configuration::updateValue('SYNKROP_OS_DOCUMENTED', (int)$state->id);
+    }
+
     private function installDb(): bool
     {
         $sql = file_get_contents(__DIR__ . '/sql/install.sql');
@@ -100,6 +141,102 @@ class Synkrop extends Module
             if ($query) Db::getInstance()->execute($query);
         }
         return true;
+    }
+
+    // ─── Hook: flujo de ventas PS → Bsale ─────────────────────────────────────
+
+    /**
+     * Encola el pedido cuando llega a un estado gatillo (default: Pago aceptado)
+     * y gestiona la cancelación. NO llama a Bsale en el request del cliente:
+     * solo escribe en la cola local (a diferencia del módulo legado syncBsale).
+     */
+    public function hookActionOrderStatusPostUpdate($params): void
+    {
+        $idOrder  = (int)($params['id_order'] ?? 0);
+        $newState = $params['newOrderStatus'] ?? null;
+        if (!$idOrder || !($newState instanceof OrderState)) {
+            return;
+        }
+
+        $config = Db::getInstance()->getRow(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_config` WHERE id_shop = ' . (int)$this->context->shop->id
+        );
+        if (!$config || !(int)($config['sync_orders'] ?? 0)) {
+            return;
+        }
+
+        // Cancelación: doble método (API primero, revisión humana como respaldo)
+        if ((int)$newState->id === (int)Configuration::get('PS_OS_CANCELED')) {
+            try {
+                $this->buildOrderDocumentService($config)->cancelSaleNote($idOrder);
+            } catch (Exception $e) {
+                // La cancelación nunca debe romper el cambio de estado del pedido
+            }
+            return;
+        }
+
+        $triggers = array_map('intval', explode(',', (string)$config['order_trigger_states']));
+        if (in_array((int)$newState->id, $triggers, true)) {
+            $order = new Order($idOrder);
+            if (Validate::isLoadedObject($order)) {
+                $this->buildOrderDocumentService($config)->enqueue($idOrder, (int)$order->id_cart);
+                // Fase 2: aquí el modo automático notificará a bot-miki (licencia vigente)
+            }
+        }
+    }
+
+    // ─── Formulario boleta/factura en el checkout ─────────────────────────────
+
+    /**
+     * Muestra el selector boleta/factura sobre las opciones de pago. Si el
+     * comprador pide factura, sus datos tributarios viajan en la nota de venta
+     * y el usuario Bsale decide el documento a emitir (nunca el sistema).
+     */
+    public function hookDisplayPaymentTop($params): string
+    {
+        $config = Db::getInstance()->getRow(
+            'SELECT sync_orders FROM `' . _DB_PREFIX_ . 'synkrop_config`
+             WHERE id_shop = ' . (int)$this->context->shop->id
+        );
+        if (!$config || !(int)$config['sync_orders']) {
+            return '';
+        }
+
+        $idCart = (int)($this->context->cart->id ?? 0);
+        if (!$idCart) {
+            return '';
+        }
+
+        $existing = Db::getInstance()->getRow(
+            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_invoice_request`
+             WHERE id_cart = ' . $idCart
+        );
+
+        $this->context->smarty->assign([
+            'synkrop_invoice_request' => $existing ?: null,
+            'synkrop_ajax_url'        => $this->context->link->getModuleLink($this->name, 'invoicerequest'),
+            'synkrop_token'           => Tools::getToken(false),
+        ]);
+
+        return $this->display(__FILE__, 'views/templates/hook/invoice_request.tpl');
+    }
+
+    public function hookActionFrontControllerSetMedia($params): void
+    {
+        if (($this->context->controller->php_self ?? '') !== 'order') {
+            return;
+        }
+        $this->context->controller->registerJavascript(
+            'synkrop-invoice-request',
+            'modules/' . $this->name . '/views/js/invoice_request.js',
+            ['position' => 'bottom', 'priority' => 150]
+        );
+    }
+
+    private function buildOrderDocumentService(array $config): OrderDocumentService
+    {
+        $token = TokenCipher::decrypt((string)$config['bsale_api_token']);
+        return new OrderDocumentService(new BsaleApiClient($token), (int)$this->context->shop->id);
     }
 
     // ─── Pagina de configuracion ──────────────────────────────────────────────
@@ -126,21 +263,50 @@ class Synkrop extends Module
         $priceList = (int)Tools::getValue('SYNKROP_PRICE_LIST_ID');
         $officeId  = (int)Tools::getValue('SYNKROP_OFFICE_ID');
 
-        if (empty($token) || empty($apiKey)) {
+        // El campo del token nunca se pre-llena (no se muestra en pantalla por
+        // seguridad) — dejarlo en blanco significa "no cambiar", no "borrar".
+        // Solo es obligatorio si todavia no hay un token guardado (alta inicial).
+        $existing = Db::getInstance()->getRow(
+            'SELECT bsale_api_token FROM `' . _DB_PREFIX_ . 'synkrop_config`
+             WHERE id_shop = ' . (int)$this->context->shop->id
+        );
+        $hasStoredToken = !empty($existing['bsale_api_token']);
+
+        if (empty($apiKey) || (empty($token) && !$hasStoredToken)) {
             return $this->displayError($this->l('El token de Bsale y la API Key de licencia son obligatorios.'));
         }
 
-        $encryptedToken = self::encryptToken($token);
+        $syncOrders    = (int)Tools::getValue('SYNKROP_SYNC_ORDERS', 0);
+        $triggerStates = implode(',', array_filter(array_map(
+            'intval',
+            explode(',', (string)Tools::getValue('SYNKROP_ORDER_TRIGGER_STATES', '2'))
+        ))) ?: '2';
+        $vatRate = (float)Tools::getValue('SYNKROP_ORDER_VAT_RATE', 19.0);
+
+        $data = [
+            'bsale_price_list_id'  => $priceList,
+            'bsale_office_id'      => $officeId ?: null,
+            'daemon_api_key'       => pSQL($apiKey),
+            'sync_orders'          => $syncOrders,
+            'order_trigger_states' => pSQL($triggerStates),
+            'order_vat_rate'       => $vatRate,
+            'shipping_sku'         => pSQL(trim((string)Tools::getValue('SYNKROP_SHIPPING_SKU', ''))),
+            'test_mode'            => (int)Tools::getValue('SYNKROP_TEST_MODE', 0),
+            'sync_categories'      => (int)Tools::getValue('SYNKROP_SYNC_CATEGORIES', 0),
+            'category_parent_id'   => (int)Tools::getValue('SYNKROP_CATEGORY_PARENT_ID', 0) ?: null,
+        ];
+
+        // Solo re-cifra y sobreescribe el token si el usuario pego uno nuevo
+        if (!empty($token)) {
+            $data['bsale_api_token'] = pSQL(TokenCipher::encrypt($token));
+        }
 
         Db::getInstance()->update(
             'synkrop_config',
-            [
-                'bsale_api_token'     => pSQL($encryptedToken),
-                'bsale_price_list_id' => $priceList,
-                'bsale_office_id'     => $officeId ?: 'NULL',
-                'daemon_api_key'      => pSQL($apiKey),
-            ],
-            'id_shop = ' . (int)$this->context->shop->id
+            $data,
+            'id_shop = ' . (int)$this->context->shop->id,
+            0,
+            true
         );
 
         return $this->displayConfirmation($this->l('Configuracion guardada correctamente.'));
@@ -180,6 +346,60 @@ class Synkrop extends Module
                         'name'  => 'SYNKROP_OFFICE_ID',
                         'desc'  => $this->l('Deja en blanco para sumar stock de todas las sucursales'),
                     ],
+                    [
+                        'type'    => 'switch',
+                        'label'   => $this->l('Flujo de ventas (PS → Bsale)'),
+                        'name'    => 'SYNKROP_SYNC_ORDERS',
+                        'desc'    => $this->l('Encola cada pedido pagado para generar su nota de venta en Bsale. La boleta/factura la emite siempre un usuario en Bsale.'),
+                        'values'  => [
+                            ['id' => 'sync_orders_on',  'value' => 1, 'label' => $this->l('Sí')],
+                            ['id' => 'sync_orders_off', 'value' => 0, 'label' => $this->l('No')],
+                        ],
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Estados gatillo (ids separados por coma)'),
+                        'name'  => 'SYNKROP_ORDER_TRIGGER_STATES',
+                        'desc'  => $this->l('Estados de pedido que encolan el documento. Default: 2 (Pago aceptado)'),
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Tasa de IVA (%)'),
+                        'name'  => 'SYNKROP_ORDER_VAT_RATE',
+                        'desc'  => $this->l('Usada para prorratear descuentos. Default: 19'),
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('SKU de despacho en Bsale'),
+                        'name'  => 'SYNKROP_SHIPPING_SKU',
+                        'desc'  => $this->l('SKU del servicio de despacho en tu catalogo Bsale (crealo una vez, sin control de stock). En blanco: Bsale creara una variante nueva por cada documento con envio. Util si el despacho es propio; si lo externalizas, define aqui el SKU que uses para cobrarlo.'),
+                    ],
+                    [
+                        'type'    => 'switch',
+                        'label'   => $this->l('Sincronizar categorias desde Bsale'),
+                        'name'    => 'SYNKROP_SYNC_CATEGORIES',
+                        'desc'    => $this->l('Modo automatico (#87): crea (o reutiliza si ya existe) una categoria PS por cada tipo de producto de Bsale, bajo la categoria padre indicada abajo.'),
+                        'values'  => [
+                            ['id' => 'sync_categories_on',  'value' => 1, 'label' => $this->l('Sí')],
+                            ['id' => 'sync_categories_off', 'value' => 0, 'label' => $this->l('No')],
+                        ],
+                    ],
+                    [
+                        'type'  => 'text',
+                        'label' => $this->l('Categoria padre (ID)'),
+                        'name'  => 'SYNKROP_CATEGORY_PARENT_ID',
+                        'desc'  => $this->l('ID de la categoria PS bajo la cual crear las categorias de Bsale. En blanco: se usa la categoria Inicio de la tienda.'),
+                    ],
+                    [
+                        'type'    => 'switch',
+                        'label'   => $this->l('Modo prueba (verificacion de emisiones)'),
+                        'name'    => 'SYNKROP_TEST_MODE',
+                        'desc'    => $this->l('SOLO para sandbox o staging. "Verificar emisiones" acepta cualquier documento manual (boleta/factura no tributaria) como emision valida, sin exigir codigo SII. NUNCA actives esto en produccion: se saltaria la validacion de documento tributario real.'),
+                        'values'  => [
+                            ['id' => 'test_mode_on',  'value' => 1, 'label' => $this->l('Sí (solo pruebas)')],
+                            ['id' => 'test_mode_off', 'value' => 0, 'label' => $this->l('No')],
+                        ],
+                    ],
                 ],
                 'submit' => ['title' => $this->l('Guardar'), 'class' => 'btn btn-default pull-right'],
             ],
@@ -199,10 +419,17 @@ class Synkrop extends Module
         $helper->currentIndex      = $this->context->link->getAdminLink('AdminModules') . '&configure=' . $this->name;
         $helper->token             = Tools::getAdminTokenLite('AdminModules');
         $helper->fields_value      = [
-            'SYNKROP_BSALE_TOKEN'    => '',  // Nunca pre-llenar el token
-            'SYNKROP_API_KEY'        => $config['daemon_api_key'] ?? '',
-            'SYNKROP_PRICE_LIST_ID'  => $config['bsale_price_list_id'] ?? '',
-            'SYNKROP_OFFICE_ID'      => $config['bsale_office_id'] ?? '',
+            'SYNKROP_BSALE_TOKEN'          => '',  // Nunca pre-llenar el token
+            'SYNKROP_API_KEY'              => $config['daemon_api_key'] ?? '',
+            'SYNKROP_PRICE_LIST_ID'        => $config['bsale_price_list_id'] ?? '',
+            'SYNKROP_OFFICE_ID'            => $config['bsale_office_id'] ?? '',
+            'SYNKROP_SYNC_ORDERS'          => (int)($config['sync_orders'] ?? 0),
+            'SYNKROP_ORDER_TRIGGER_STATES' => $config['order_trigger_states'] ?? '2',
+            'SYNKROP_ORDER_VAT_RATE'       => $config['order_vat_rate'] ?? '19.00',
+            'SYNKROP_SHIPPING_SKU'         => $config['shipping_sku'] ?? '',
+            'SYNKROP_TEST_MODE'            => (int)($config['test_mode'] ?? 0),
+            'SYNKROP_SYNC_CATEGORIES'      => (int)($config['sync_categories'] ?? 0),
+            'SYNKROP_CATEGORY_PARENT_ID'   => $config['category_parent_id'] ?? '',
         ];
 
         return $helper->generateForm([$fields]);
@@ -308,25 +535,5 @@ class Synkrop extends Module
         }
 
         return $this->displayConfirmation($this->l('Mapeo de precios guardado correctamente.'));
-    }
-
-    // ─── Cifrado de token de Bsale ────────────────────────────────────────────
-
-    public static function encryptToken(string $token): string
-    {
-        $key = substr(_COOKIE_KEY_, 0, 32);
-        $iv  = openssl_random_pseudo_bytes(16);
-        $encrypted = openssl_encrypt($token, 'AES-256-CBC', $key, 0, $iv);
-        return base64_encode($iv . '::' . $encrypted);
-    }
-
-    public static function decryptToken(string $encrypted): string
-    {
-        $key  = substr(_COOKIE_KEY_, 0, 32);
-        $data = base64_decode($encrypted);
-        $parts = explode('::', $data, 2);
-        $iv = $parts[0];
-        $ciphertext = $parts[1];
-        return openssl_decrypt($ciphertext, 'AES-256-CBC', $key, 0, $iv) ?: '';
     }
 }

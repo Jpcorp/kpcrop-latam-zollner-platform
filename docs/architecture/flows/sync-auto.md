@@ -24,7 +24,7 @@ sequenceDiagram
         W-->>Q: Job descartado (no reintento)
     end
 
-    W->>BS: GET /v1/products.json?expand=[variants]&limit=50&offset=0
+    W->>BS: GET /v1/products.json?expand=[variants]&limit=50&offset=0 (paginado hasta el final)
     Note over BS: Bsale NO tiene updated_since — se descarga el catalogo completo
     BS-->>W: {items: [...], count: N}
 
@@ -39,8 +39,12 @@ sequenceDiagram
     Note over W: Solo variantes con hash diferente generan trabajo
 
     alt Variante con cambio detectado
-        W->>W: Upsert snapshot en bsale_variant_snapshots
-        Note over W: TODO: traducir a CanonicalProduct y sync al CMS (pendiente implementacion)
+        W->>P: POST webhook.php {topic:"variant", bsaleData} (#79, mismo payload quirurgico que un webhook real)
+        alt Dispatch OK
+            W->>W: Upsert snapshot en bsale_variant_snapshots
+        else Dispatch falla
+            Note over W: No se actualiza el snapshot — el proximo ciclo la vuelve a detectar como cambiada
+        end
     end
 
     W->>LOG: Actualizar last_sync_at y last_sync_status en tenant_stores

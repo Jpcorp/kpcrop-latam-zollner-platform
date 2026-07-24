@@ -78,6 +78,76 @@ class BsaleApiClient
         return json_decode($body, true) ?? [];
     }
 
+    /**
+     * POST — crea un recurso en Bsale (ej: documents.json). Espera HTTP 200/201.
+     */
+    public function post(string $path, array $data): array
+    {
+        $this->throttle();
+
+        $ch = curl_init(self::BASE_URL . $path);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($data),
+            CURLOPT_HTTPHEADER     => [
+                'access_token: ' . $this->accessToken,
+                'Accept: application/json',
+                'Content-Type: application/json',
+            ],
+            CURLOPT_TIMEOUT        => 30,
+        ]);
+
+        $body = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode === 429) {
+            sleep(60);
+            return $this->post($path, $data);
+        }
+
+        if ($httpCode >= 400 || $httpCode === 0) {
+            throw new BsaleApiException($httpCode, (string)$body);
+        }
+
+        return json_decode($body, true) ?? [];
+    }
+
+    /**
+     * DELETE — elimina/anula un recurso en Bsale. Espera HTTP 200.
+     */
+    public function delete(string $path): array
+    {
+        $this->throttle();
+
+        $ch = curl_init(self::BASE_URL . $path);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST  => 'DELETE',
+            CURLOPT_HTTPHEADER     => [
+                'access_token: ' . $this->accessToken,
+                'Accept: application/json',
+            ],
+            CURLOPT_TIMEOUT        => 30,
+        ]);
+
+        $body = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode === 429) {
+            sleep(60);
+            return $this->delete($path);
+        }
+
+        if ($httpCode >= 400 || $httpCode === 0) {
+            throw new BsaleApiException($httpCode, (string)$body);
+        }
+
+        return json_decode($body, true) ?? [];
+    }
+
     private function throttle()
     {
         $now = (int)(microtime(true) * 1000);
@@ -91,8 +161,18 @@ class BsaleApiClient
 
 class BsaleApiException extends RuntimeException
 {
+    // #115: el body de la respuesta de Bsale entraba entero en el mensaje de
+    // excepcion, que termina guardado en synkrop_log.error_details — un error
+    // inesperadamente largo (o que Bsale cambie de forma) podia volcar mucho
+    // mas de lo necesario para diagnosticar. Truncado a un tamano razonable
+    // para debug sin acumular payloads completos en el log.
+    private const MAX_BODY_LENGTH = 500;
+
     public function __construct(int $httpCode, string $body)
     {
+        if (strlen($body) > self::MAX_BODY_LENGTH) {
+            $body = substr($body, 0, self::MAX_BODY_LENGTH) . '... (truncado)';
+        }
         parent::__construct("Bsale API {$httpCode}: {$body}", $httpCode);
     }
 

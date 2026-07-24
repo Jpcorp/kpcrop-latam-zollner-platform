@@ -63,7 +63,7 @@ export async function syncReportRoute(app: FastifyInstance) {
       if (license.status !== 'active') {
         return reply.code(402).send({
           code: 'LICENSE_EXPIRED',
-          message: `Licencia ${license.status}. Renueva en kpcrop.com/billing`,
+          message: `Licencia ${license.status}. Renueva en www.keepcrop.com`,
         });
       }
 

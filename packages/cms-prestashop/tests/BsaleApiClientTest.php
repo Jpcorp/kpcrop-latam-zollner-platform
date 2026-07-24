@@ -97,4 +97,23 @@ class BsaleApiClientTest extends TestCase
         $exception = new BsaleApiException(422, 'Validation error');
         $this->assertStringContainsString('422', $exception->getMessage());
     }
+
+    // ── #115: truncado del body en el mensaje ──────────────────────────────────
+
+    public function test_BsaleApiException_does_not_truncate_short_body(): void
+    {
+        $exception = new BsaleApiException(400, '{"error":"invalid variant"}');
+        $this->assertStringContainsString('{"error":"invalid variant"}', $exception->getMessage());
+        $this->assertStringNotContainsString('truncado', $exception->getMessage());
+    }
+
+    public function test_BsaleApiException_truncates_long_body(): void
+    {
+        $longBody = str_repeat('x', 1000);
+        $exception = new BsaleApiException(500, $longBody);
+
+        $this->assertStringContainsString('truncado', $exception->getMessage());
+        // 500 caracteres del body + el resto del mensaje (prefijo + sufijo), no el string de 1000 completo
+        $this->assertLessThan(1000, strlen($exception->getMessage()));
+    }
 }

@@ -1,0 +1,102 @@
+## Laboratorio local para #113: simula la separacion de bot-miki en 3 servicios
+## Railway (api / worker / scheduler) usando la MISMA imagen Docker, solo cambiando
+## PROCESS_ROLE — igual que se haria en el dashboard de Railway.
+##
+## No toca el docker-compose.yml de desarrollo normal (puertos e infra propios,
+## para poder correr ambos a la vez sin choques).
+##
+## Uso:
+##   docker compose -f docker-compose.roles.yml up --build
+##   docker compose -f docker-compose.roles.yml down -v   # limpiar todo
+##
+## Nombre de proyecto propio (name:) para no chocar con los contenedores del
+## docker-compose.yml normal (ambos usarian el mismo nombre por defecto, el de
+## este directorio, y se pisarian entre si).
+name: kpcrop-roles-lab
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: botmiki
+      POSTGRES_USER: botmiki
+      POSTGRES_PASSWORD: botmiki_dev
+    ports:
+      - "5434:5432"
+    volumes:
+      - roles_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U botmiki"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6381:6379"
+    volumes:
+      - roles_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  bot-miki-api:
+    build:
+      context: .
+      dockerfile: packages/bot-miki/Dockerfile
+    ports:
+      - "3001:3000"
+    env_file:
+      - ./packages/bot-miki/.env
+    environment:
+      PROCESS_ROLE: api
+      DATABASE_URL: postgresql://botmiki:botmiki_dev@postgres:5432/botmiki
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  bot-miki-worker:
+    build:
+      context: .
+      dockerfile: packages/bot-miki/Dockerfile
+    env_file:
+      - ./packages/bot-miki/.env
+    environment:
+      PROCESS_ROLE: worker
+      DATABASE_URL: postgresql://botmiki:botmiki_dev@postgres:5432/botmiki
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      bot-miki-api:
+        condition: service_started   # que la API corra las migraciones primero
+
+  bot-miki-scheduler:
+    build:
+      context: .
+      dockerfile: packages/bot-miki/Dockerfile
+    env_file:
+      - ./packages/bot-miki/.env
+    environment:
+      PROCESS_ROLE: scheduler
+      DATABASE_URL: postgresql://botmiki:botmiki_dev@postgres:5432/botmiki
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      bot-miki-api:
+        condition: service_started
+
+volumes:
+  roles_postgres_data:
+  roles_redis_data:

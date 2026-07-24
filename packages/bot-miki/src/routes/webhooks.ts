@@ -12,6 +12,20 @@ interface BsaleWebhookPayload {
   send: number;           // unix timestamp
 }
 
+// #97: whitelist de rutas por topic — resourceUrl viene del payload del webhook
+// (no autenticado, ver mas abajo) y se usa directo en bsale.get(resourceUrl) mas
+// adelante en el worker. Sin esto, un cpnId adivinado/enumerado permite forzar a
+// bot-miki a leer CUALQUIER endpoint de Bsale (ej. /v1/clients.json,
+// /v1/documents.json) con el token del tenant victima, no solo stock/variant/product.
+// price no usa resourceUrl (cae a bulk) — no necesita whitelist.
+const RESOURCE_WHITELIST: Record<string, RegExp> = {
+  product: /^\/v[12]\/products\/\d+\.json(\?.*)?$/,
+  variant: /^\/v[12]\/variants\/\d+\.json(\?.*)?$/,
+  // stock permite ademas la forma coleccion de v2 (sin id en el path, ej.
+  // "/v2/stocks.json?variantid=123") — el resolver ya maneja ambas formas.
+  stock:   /^\/v[12]\/stocks(\/\d+)?\.json(\?.*)?$/,
+};
+
 export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<SyncJobData> }) {
   const { queue } = opts;
   app.post<{ Body: BsaleWebhookPayload }>(
@@ -54,12 +68,25 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
         return reply.code(200).send(); // Aceptar pero ignorar
       }
 
-      // Buscar tenant por cpnId de Bsale — join con licenses para obtener el tenant_id string
+      // #97: el resource debe coincidir con la forma esperada para su topic —
+      // rechaza cualquier intento de apuntar bsale.get() a un endpoint distinto.
+      const whitelist = RESOURCE_WHITELIST[payload.topic];
+      if (whitelist && !whitelist.test(payload.resource)) {
+        return reply.code(400).send({ error: 'invalid_resource' });
+      }
+
+      // Buscar tenant por cpnId de Bsale — join con licenses para obtener el tenant_id string.
+      // #127: filtra por status='active' — con licencia vencida/suspendida el
+      // auto-sync (webhook) queda apagado a proposito (el modo degradado solo
+      // permite el sync MANUAL desde el panel, con limite de frecuencia). Antes
+      // encolaba igual y el CMS recien rechazaba en syncSingle() — desperdiciaba
+      // rate-limit de Bsale y un ciclo de worker en trabajo que se iba a descartar.
       const store = await db
         .selectFrom('tenant_stores as s')
         .innerJoin('licenses as l', 'l.id', 's.license_id')
         .select(['s.id', 's.license_id', 'l.tenant_id'])
         .where('s.bsale_integration_id', '=', payload.cpnId)
+        .where('l.status', '=', 'active')
         .executeTakeFirst();
 
       if (!store) {
@@ -79,11 +106,18 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
           resourceId:  payload.resourceId,
           topic:       payload.topic,
           action:      payload.action,
+          send:        payload.send, // #115: para que el CMS descarte eventos de stock fuera de orden
         },
         {
           jobId:    idempotencyKey,
           attempts: 5,
           backoff:  { type: 'exponential', delay: 30_000 },
+          // #115: sin esto, Redis acumula un job completado por cada webhook
+          // de Bsale para siempre — con feeds de alto volumen (stock/precio
+          // cambiando seguido) crece sin techo. Mismos valores que ya usa
+          // el scheduler para los jobs de polling.
+          removeOnComplete: { age: 86_400 },
+          removeOnFail:     { age: 604_800 },
         },
       );
 

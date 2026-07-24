@@ -18,6 +18,8 @@ class SynkropServiceTest extends TestCase
         Db::reset();
         StockAvailable::reset();
         Product::reset();
+        Category::reset();
+        Configuration::reset();
 
         $this->licenseMock = $this->createMock(LicenseClient::class);
         $this->licenseMock->method('getToken')->willReturn('mock.jwt.token');
@@ -208,6 +210,252 @@ class SynkropServiceTest extends TestCase
         $service->sync('prices');
     }
 
+    // ─── syncStock: fallback variant.href (#98) ───────────────────────────────
+
+    public function test_syncStock_bulk_falls_back_to_variant_href_when_id_missing(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = 42; // variante 1001 ya mapeada al producto 42
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')
+            ->willReturn([
+                [
+                    'quantityAvailable' => 15,
+                    'variant' => ['href' => 'https://api.bsale.io/v1/variants/1001.json'], // sin id
+                ],
+            ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->sync('stock');
+
+        $this->assertEquals(1, $result->updated);
+        $this->assertEquals(0, $result->failed);
+
+        $stockUpdate = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'stock_available'
+        ))[0] ?? ($db->getCalls('insert')[0] ?? null);
+        $this->assertNotNull($stockUpdate);
+    }
+
+    public function test_syncStock_bulk_marks_failed_when_variant_unresolvable(): void
+    {
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')
+            ->willReturn([
+                ['quantityAvailable' => 5, 'variant' => []], // ni id ni href — antes esto se salteaba en silencio
+            ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->sync('stock');
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(1, $result->failed, 'Antes del fix #98 esto era updated=0/failed=0 (status success) sin haber actualizado nada');
+    }
+
+    // ─── syncStock/syncSingle: quantityAvailable sin validar (#101) ───────────
+
+    public function test_syncStock_bulk_marks_failed_when_quantityAvailable_missing(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = 42;
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')
+            ->willReturn([
+                ['variant' => ['id' => 1001]], // sin quantityAvailable
+            ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->sync('stock');
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(1, $result->failed);
+        $this->assertEmpty($db->getCalls('update'), 'No debe tocar stock_available con una cantidad invalida');
+        $this->assertEmpty($db->getCalls('insert'));
+    }
+
+    public function test_syncSingle_stock_marks_failed_when_quantityAvailable_not_numeric(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = 42;
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001],
+            'quantityAvailable' => null, // shape distinta de la esperada -> antes caia a 0 en silencio
+        ]);
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(1, $result->failed);
+        $this->assertEmpty($db->getCalls('update'), 'No debe poner stock en 0 por una cantidad invalida');
+    }
+
+    public function test_syncSingle_stock_applies_valid_zero_quantity(): void
+    {
+        // Cero es un valor legitimo (sin stock) — no debe confundirse con "invalido".
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = 42;
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001],
+            'quantityAvailable' => 0,
+        ]);
+
+        $this->assertEquals(1, $result->updated);
+        $this->assertEquals(0, $result->failed);
+    }
+
+    // ─── syncSingle stock: self-healing del mapa (#114) ───────────────────────
+
+    public function test_syncSingle_stock_self_heals_unmapped_variant(): void
+    {
+        $db = Db::getInstance();
+        $variantMapCalls = 0;
+        $db->queryResults['synkrop_product_map'] = function (string $sql) use (&$variantMapCalls) {
+            if (strpos($sql, 'bsale_variant_id') !== false) {
+                $variantMapCalls++;
+                // 1ra consulta (antes de sanar): no mapeada. Desde la 2da (tras el
+                // upsert dentro de healVariantMap): ya mapeada al producto 55.
+                return $variantMapCalls === 1 ? null : 55;
+            }
+            // Consulta de existencia por bsale_code dentro de saveProductMap: no existe -> INSERT.
+            return null;
+        };
+        $db->queryResults['`ps_product`'] = null; // findProductByReference: producto nuevo
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('get')
+            ->with('/v1/variants/1001.json', ['expand' => '[product]'])
+            ->willReturn([
+                'id'       => 1001,
+                'code'     => 'SKU-NUEVO-1001',
+                'quantity' => 10,
+                'product'  => ['name' => 'Producto Nuevo', 'description' => '', 'state' => 0],
+            ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncSingle('stock', [
+            'variant'           => ['id' => 1001],
+            'quantityAvailable' => 7,
+        ]);
+
+        $this->assertEquals(1, $result->updated);
+        $this->assertEquals(0, $result->failed);
+        $this->assertNotEmpty(Product::$added, 'Debe crear el producto nuevo al sanar el mapa');
+
+        $mapInsert = array_values(array_filter(
+            $db->getCalls('insert'),
+            fn($c) => $c['table'] === 'synkrop_product_map'
+        ));
+        $this->assertNotEmpty($mapInsert, 'Debe registrar el mapeo variante->producto recien sanado');
+        $this->assertEquals(1001, $mapInsert[0]['data']['bsale_variant_id']);
+    }
+
+    public function test_syncSingle_stock_reports_error_when_heal_fails(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = null; // nunca mapeada
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('get')
+            ->willThrowException(new BsaleApiException(404, 'variant not found'));
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncSingle('stock', [
+            'variant'           => ['id' => 9999],
+            'quantityAvailable' => 3,
+        ]);
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(1, $result->failed);
+        $this->assertStringContainsString('no se pudo resolver', $result->errors[0]['message']);
+        $this->assertEmpty(Product::$added, 'No debe crear productos cuando la variante no existe en Bsale');
+    }
+
+    // ─── syncDelete: action=delete de variante (#109) ─────────────────────────
+
+    public function test_syncDelete_sets_stock_zero_for_mapped_variant(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = 42; // variante 9506 mapeada al producto 42
+        $db->queryResults['stock_available'] = 7; // ya existe fila de stock -> toma la rama UPDATE
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncDelete('variant', '9506');
+
+        $this->assertEquals(1, $result->updated);
+        $this->assertEquals(0, $result->failed);
+
+        $stockCall = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'stock_available'
+        ))[0] ?? null;
+        $this->assertNotNull($stockCall, 'Debe actualizar stock_available');
+        $this->assertEquals(0, $stockCall['data']['quantity']);
+    }
+
+    public function test_syncDelete_noop_success_for_unmapped_variant(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_product_map'] = null; // nunca estuvo mapeada
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncDelete('variant', '9999');
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(0, $result->failed, 'No mapeada no es un error — no habia nada que limpiar');
+        $this->assertEmpty($db->getCalls('update'));
+    }
+
+    public function test_syncDelete_fails_for_unsupported_topic(): void
+    {
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncDelete('product', '123');
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(1, $result->failed);
+    }
+
+    // ─── purgeOldLogs: retencion de synkrop_log (#111) ────────────────────────
+
+    public function test_purgeOldLogs_deletes_with_default_90_days(): void
+    {
+        $db = Db::getInstance();
+
+        SynkropService::purgeOldLogs();
+
+        $calls = $db->getCalls('execute');
+        $this->assertCount(1, $calls);
+        $this->assertStringContainsString('DELETE FROM', $calls[0]['sql']);
+        $this->assertStringContainsString('synkrop_log', $calls[0]['sql']);
+        $this->assertStringContainsString('INTERVAL 90 DAY', $calls[0]['sql']);
+        $this->assertStringContainsString('LIMIT 5000', $calls[0]['sql']);
+    }
+
+    public function test_purgeOldLogs_respects_custom_days_and_batch_limit(): void
+    {
+        $db = Db::getInstance();
+
+        SynkropService::purgeOldLogs(30, 1000);
+
+        $calls = $db->getCalls('execute');
+        $this->assertStringContainsString('INTERVAL 30 DAY', $calls[0]['sql']);
+        $this->assertStringContainsString('LIMIT 1000', $calls[0]['sql']);
+    }
+
     // ─── SyncResult ──────────────────────────────────────────────────────────
 
     public function test_SyncResult_status_success_when_no_failures(): void
@@ -231,5 +479,365 @@ class SynkropServiceTest extends TestCase
         $result->updated = 0;
         $result->failed  = 4;
         $this->assertEquals('failed', $result->status());
+    }
+
+    // ─── upsertVariant: lock de sincronizacion por SKU (#115) ─────────────────
+
+    public function test_syncSingle_variant_libera_el_lock_al_terminar(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['`ps_product`'] = null; // producto nuevo
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('variant', [
+            'id' => 1001, 'code' => 'SKU-LOCK-1', 'quantity' => 5, 'state' => 0,
+        ]);
+
+        $this->assertEquals(1, $result->updated);
+
+        $releaseCalls = array_values(array_filter(
+            $db->getCalls('execute'),
+            fn($c) => strpos($c['sql'], 'RELEASE_LOCK') !== false
+        ));
+        $this->assertNotEmpty($releaseCalls, 'Debe liberar el lock al terminar');
+    }
+
+    public function test_syncSingle_variant_falla_si_no_consigue_el_lock(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['GET_LOCK'] = 0; // otro proceso ya tiene el lock de este SKU
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        try {
+            $service->syncSingle('variant', [
+                'id' => 1001, 'code' => 'SKU-LOCK-2', 'quantity' => 5, 'state' => 0,
+            ]);
+            $this->fail('Deberia haber lanzado RuntimeException por no conseguir el lock');
+        } catch (RuntimeException $e) {
+            $this->assertMatchesRegularExpression('/no se pudo sincronizar/i', $e->getMessage());
+        }
+
+        $this->assertEmpty(Product::$added, 'No debe crear el producto si no consiguio el lock');
+    }
+
+    // ─── syncSingle stock: orden de eventos por variante (#115) ───────────────
+    // Dos webhooks de stock para la MISMA variante pueden llegar y procesarse
+    // fuera de orden (concurrency:5 en bot-miki + latencia de red variable).
+    // Sin esto, el evento mas viejo puede pisar al mas nuevo con datos obsoletos.
+
+    private function mockProductMapWithLastSend($db, int $idProduct, $lastSend)
+    {
+        $db->queryResults['synkrop_product_map'] = function (string $sql) use ($idProduct, $lastSend) {
+            if (strpos($sql, 'last_stock_event_send') !== false) {
+                return $lastSend;
+            }
+            if (strpos($sql, 'bsale_variant_id') !== false) {
+                return $idProduct;
+            }
+            return null; // exists-check de saveProductMap por bsale_code, no aplica aca
+        };
+    }
+
+    public function test_syncSingle_stock_sin_sendTimestamp_aplica_como_antes(): void
+    {
+        // Retrocompatibilidad: si no viene el timestamp (otros llamadores que
+        // todavia no lo pasan), el comportamiento es identico al de siempre.
+        $db = Db::getInstance();
+        $this->mockProductMapWithLastSend($db, 42, null);
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 7,
+        ]);
+
+        $this->assertEquals(1, $result->updated);
+    }
+
+    public function test_syncSingle_stock_aplica_evento_mas_nuevo_y_registra_el_timestamp(): void
+    {
+        $db = Db::getInstance();
+        $this->mockProductMapWithLastSend($db, 42, null); // nunca se aplico nada todavia
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 7,
+        ], 1_700_000_000);
+
+        $this->assertEquals(1, $result->updated);
+
+        $updateCall = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'synkrop_product_map' && array_key_exists('last_stock_event_send', $c['data'])
+        ));
+        $this->assertNotEmpty($updateCall, 'Debe registrar el timestamp del evento aplicado');
+        $this->assertEquals(1_700_000_000, $updateCall[0]['data']['last_stock_event_send']);
+    }
+
+    public function test_syncSingle_stock_descarta_evento_mas_viejo_que_el_ya_aplicado(): void
+    {
+        $db = Db::getInstance();
+        // Ya se aplico un evento con send=1_700_000_500 (mas nuevo)
+        $this->mockProductMapWithLastSend($db, 42, 1_700_000_500);
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        // Este evento llega DESPUES (por red/concurrencia) pero es de un
+        // momento ANTERIOR (send mas chico) -> debe descartarse.
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 999,
+        ], 1_700_000_000);
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(0, $result->failed, 'Descartar un evento obsoleto no es un error');
+
+        $stockUpdate = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'stock_available'
+        ));
+        $this->assertEmpty($stockUpdate, 'No debe tocar el stock con un evento mas viejo que el ya aplicado');
+    }
+
+    public function test_syncSingle_stock_aplica_evento_mas_nuevo_que_el_ya_aplicado(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['stock_available'] = 5; // ya existe fila de stock -> UPDATE
+        $this->mockProductMapWithLastSend($db, 42, 1_700_000_000);
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $result = $service->syncSingle('stock', [
+            'variant' => ['id' => 1001], 'quantityAvailable' => 3,
+        ], 1_700_000_500); // mas nuevo que el ya aplicado
+
+        $this->assertEquals(1, $result->updated);
+    }
+
+    // ─── syncManual: modo degradado por licencia vencida (#127) ──────────────
+
+    public function test_syncManual_con_licencia_activa_se_comporta_como_sync(): void
+    {
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncManual('products');
+
+        $this->assertEquals(0, $result->failed);
+        $db = Db::getInstance();
+        $this->assertEmpty(
+            $db->getCalls('update'),
+            'Con licencia activa no debe tocar degraded_manual_sync_at'
+        );
+    }
+
+    public function test_syncManual_licencia_vencida_sin_uso_previo_permite_sync_y_registra_marca(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['degraded_manual_sync_at'] = null; // nunca se uso el modo degradado
+
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('Licencia vencida o suspendida', 402));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncManual('products');
+
+        $this->assertEquals(0, $result->failed, 'El sync manual degradado debe completarse, no fallar');
+
+        $configUpdates = array_values(array_filter(
+            $db->getCalls('update'),
+            fn($c) => $c['table'] === 'synkrop_config'
+        ));
+        $this->assertCount(1, $configUpdates);
+        $this->assertArrayHasKey('degraded_manual_sync_at', $configUpdates[0]['data']);
+    }
+
+    public function test_syncManual_licencia_vencida_dentro_de_ventana_lanza_LicenseException(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['degraded_manual_sync_at'] = gmdate('Y-m-d H:i:s', time() - 2 * 3600); // hace 2h
+
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('Licencia vencida o suspendida', 402));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $this->expectException(LicenseException::class);
+        $this->expectExceptionMessageMatches('/limitado a 1 vez cada 24h/');
+        $service->syncManual('products');
+    }
+
+    public function test_syncManual_licencia_vencida_fuera_de_ventana_permite_de_nuevo(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['degraded_manual_sync_at'] = gmdate('Y-m-d H:i:s', time() - 25 * 3600); // hace 25h
+
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('Licencia vencida o suspendida', 402));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncManual('products');
+
+        $this->assertEquals(0, $result->failed, 'Pasada la ventana de 24h, debe permitir sync manual de nuevo');
+    }
+
+    public function test_syncManual_error_no_expirado_relanza_sin_gracia(): void
+    {
+        // Un error de conexion/formato (no 402) NO es "licencia vencida" -- no debe
+        // dar gracia (ver #128: indisponibilidad del servicio != licencia inactiva).
+        $this->licenseMock = $this->createMock(LicenseClient::class);
+        $this->licenseMock->method('getToken')
+            ->willThrowException(new LicenseException('No se pudo conectar al servidor de licencias', 0));
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $this->expectException(LicenseException::class);
+        $this->expectExceptionMessage('No se pudo conectar al servidor de licencias');
+        $service->syncManual('products');
+
+        $db = Db::getInstance();
+        $this->assertEmpty(
+            $db->getCalls('update'),
+            'Un error de conexion no debe tocar degraded_manual_sync_at'
+        );
+    }
+
+    // ─── syncCategories (#87: sync de categorías, modo automático MVP) ───────
+
+    public function test_syncCategories_lanza_si_esta_desactivado(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_config'] = ['sync_categories' => 0];
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/desactivada/');
+        $service->syncCategories();
+    }
+
+    public function test_syncCategories_crea_categoria_nueva_y_guarda_mapeo(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_config']  = ['sync_categories' => 1, 'category_parent_id' => 2];
+        $db->queryResults['category_lang']   = null; // no existe -> crear
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([
+            ['id' => 10, 'name' => 'Accesorios'],
+        ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncCategories();
+
+        $this->assertEquals(1, $result->updated);
+        $this->assertEquals(0, $result->failed);
+        $this->assertCount(1, Category::$added);
+        $this->assertEquals('Accesorios', Category::$added[0]->name[1]);
+        $this->assertEquals(2, Category::$added[0]->id_parent);
+
+        $mapInsert = array_values(array_filter(
+            $db->getCalls('execute'),
+            fn($c) => strpos($c['sql'], 'synkrop_category_map') !== false
+        ));
+        $this->assertNotEmpty($mapInsert, 'Debe guardar el mapeo bsale_type -> categoria PS');
+    }
+
+    public function test_syncCategories_reutiliza_categoria_existente_no_duplica(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_config'] = ['sync_categories' => 1, 'category_parent_id' => 2];
+        $db->queryResults['category_lang']  = 55; // ya existe una categoria con ese nombre
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([
+            ['id' => 10, 'name' => 'Accesorios'],
+        ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncCategories();
+
+        $this->assertEquals(1, $result->updated);
+        $this->assertEmpty(Category::$added, 'No debe crear una categoria duplicada');
+    }
+
+    public function test_syncCategories_omite_tipos_sin_nombre_sin_contarlo_como_error(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_config'] = ['sync_categories' => 1, 'category_parent_id' => 2];
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([
+            ['id' => 11, 'name' => ''],
+        ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $result  = $service->syncCategories();
+
+        $this->assertEquals(0, $result->updated);
+        $this->assertEquals(0, $result->failed);
+    }
+
+    // ─── resolveCategoryId vía upsertVariant (producto nuevo) ────────────────
+
+    public function test_upsertVariant_producto_nuevo_usa_categoria_mapeada_si_existe(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['`ps_product`']       = null; // producto nuevo
+        $db->queryResults['synkrop_category_map'] = 77;   // mapeo existente para product_type 10
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $service->syncSingle('variant', [
+            'id' => 1001, 'code' => 'SKU-CAT-1', 'quantity' => 5, 'state' => 0,
+            'product' => ['name' => 'Producto X', 'description' => '', 'state' => 0, 'product_type' => ['id' => 10]],
+        ]);
+
+        $this->assertNotEmpty(Product::$added);
+        $this->assertEquals(77, Product::$added[0]->id_category_default);
+    }
+
+    public function test_upsertVariant_producto_nuevo_sin_mapeo_usa_home_category(): void
+    {
+        Configuration::$values['PS_HOME_CATEGORY'] = 2;
+
+        $db = Db::getInstance();
+        $db->queryResults['`ps_product`']         = null; // producto nuevo
+        $db->queryResults['synkrop_category_map'] = null;   // sin mapeo
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $service->syncSingle('variant', [
+            'id' => 1002, 'code' => 'SKU-CAT-2', 'quantity' => 5, 'state' => 0,
+            'product' => ['name' => 'Producto Y', 'description' => '', 'state' => 0, 'product_type' => ['id' => 99]],
+        ]);
+
+        $this->assertNotEmpty(Product::$added);
+        $this->assertEquals(2, Product::$added[0]->id_category_default, 'Sin mapeo debe caer a PS_HOME_CATEGORY');
     }
 }
