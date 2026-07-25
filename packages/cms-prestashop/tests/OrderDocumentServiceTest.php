@@ -210,4 +210,32 @@ class OrderDocumentServiceTest extends TestCase
         // que garantiza que checkEmissions() (que lo envuelve en try/catch) siga.
         $this->assertFalse($result);
     }
+
+    // ─── checkEmissions: lock contra ejecucion concurrente (#130 Fase 2) ─────
+
+    public function testCheckEmissionsLanzaSiNoConsigueElLock(): void
+    {
+        // #130: con el webhook de Bsale (topic=document) disparando checkEmissions()
+        // automaticamente, dos llamadas casi simultaneas para la misma tienda ya
+        // son posibles (antes solo lo disparaba un clic humano) — mismo patron de
+        // lock que ya protege upsertVariant() (#115) contra el mismo problema.
+        Db::getInstance()->queryResults['GET_LOCK'] = 0; // otro proceso ya esta corriendo checkEmissions
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/timeout/');
+        $this->service->checkEmissions();
+    }
+
+    public function testCheckEmissionsLiberaElLockAlTerminar(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = [];
+
+        $this->service->checkEmissions();
+
+        $releaseCalls = array_filter(
+            Db::getInstance()->getCalls('execute'),
+            fn($c) => strpos($c['sql'], 'RELEASE_LOCK') !== false
+        );
+        $this->assertNotEmpty($releaseCalls, 'Debe liberar el lock aunque no haya filas que procesar');
+    }
 }

@@ -18,6 +18,18 @@ if (!defined('_PS_VERSION_')) {
     $_SERVER['HTTP_HOST']   = $_SERVER['HTTP_HOST'] ?? 'localhost';
     $_SERVER['REQUEST_URI'] = '/';
     require_once dirname(__FILE__, 3) . '/config/config.inc.php';
+
+    // #130: Context::currency no lo puebla config.inc.php fuera de un request real
+    // (lo hace el Dispatcher normalmente). Nunca importó hasta ahora porque ningun
+    // codigo llamado desde aca tocaba un Order — checkEmissions()->closeOrder()
+    // (Fase 2) es el primero, y Order::setCurrentState() dispara hooks core
+    // (ej. ps_crossselling::getCacheId()) que leen $context->currency->id. Sin
+    // esto: PHP Notice "Trying to get property 'id' of non-object", que con
+    // display_errors=On en el servidor se imprime ANTES del JSON de respuesta y
+    // lo corrompe (bot-miki no podria parsear response.json()).
+    if (!Context::getContext()->currency) {
+        Context::getContext()->currency = new Currency((int)Configuration::get('PS_CURRENCY_DEFAULT'));
+    }
 }
 
 header('Content-Type: application/json');
@@ -52,7 +64,13 @@ $isDelete = ($body['action'] ?? null) === 'delete' && isset($body['topic']) && i
 // Modo quirúrgico: bot-miki resolvió el recurso concreto de Bsale
 $isSurgical = !$isDelete && isset($body['bsaleData']) && isset($body['topic']);
 
-if (!$isSurgical && !$isDelete) {
+// #130 Fase 2: aviso de que Bsale emitio un documento tributario sobre una nota
+// de venta — bot-miki no manda bsaleData (no hay nada que resolver de su lado),
+// el plugin hace su propia correlacion via OrderDocumentService::checkEmissions()
+// (la misma logica que ya usa el boton manual "Verificar emisiones").
+$isDocumentCheck = !$isDelete && !$isSurgical && ($body['topic'] ?? null) === 'document';
+
+if (!$isSurgical && !$isDelete && !$isDocumentCheck) {
     // Modo bulk: compatibilidad con sync manual y fallback price
     $entity = $body['entity'] ?? 'stock';
     if (!in_array($entity, ['products', 'stock', 'prices'])) {
@@ -74,7 +92,9 @@ $fullConfig = Db::getInstance()->getRow(
 );
 
 $syncResult  = null;
-$syncEntity  = ($isSurgical || $isDelete) ? ($body['topic'] ?? 'unknown') : ($entity ?? 'unknown');
+$syncEntity  = ($isSurgical || $isDelete)
+    ? ($body['topic'] ?? 'unknown')
+    : ($isDocumentCheck ? 'document' : ($entity ?? 'unknown'));
 $syncStatus  = 'failed';
 $syncErrMsg  = null;
 // #93: distingue fallo transitorio (excepción → bot-miki reintenta) de permanente
@@ -107,6 +127,90 @@ register_shutdown_function(function () use (&$logWritten, &$syncResult, $syncEnt
         error_log('[Synkrop] shutdown fallback DB failed: ' . $t->getMessage() . ' | original: ' . $msg);
     }
 });
+
+// #130 Fase 2: rama separada del resto (no comparte $syncResult ni el flujo de
+// SynkropService) porque checkEmissions() devuelve un array simple, no un
+// SyncResult — mezclar los dos formatos en el mismo bloque de abajo hubiera
+// arriesgado el codigo ya auditado de stock/variant/product/price para una
+// forma de dato distinta. Reusa la MISMA logica de correlacion que el boton
+// manual "Verificar emisiones" — cero cambios a OrderDocumentService.
+if ($isDocumentCheck) {
+    $docStart = microtime(true);
+
+    try {
+        $decryptedToken = TokenCipher::decrypt($fullConfig['bsale_api_token']);
+        $orderService   = new OrderDocumentService(new BsaleApiClient($decryptedToken), 1);
+        $summary        = $orderService->checkEmissions();
+        $durationMs     = (int)((microtime(true) - $docStart) * 1000);
+
+        Db::getInstance()->insert('synkrop_log', [
+            'id_shop'      => 1,
+            'sync_type'    => 'webhook',
+            'entity_type'  => pSQL('document'),
+            'status'       => 'success',
+            'records_ok'   => $summary['emitted'],
+            'records_fail' => 0,
+            'duration_ms'  => $durationMs,
+            'error_details'=> pSQL('[]'),
+            'job_id'       => $jobId ? pSQL($jobId) : null,
+            'created_at'   => gmdate('Y-m-d H:i:s'), // #100: UTC explicito (servidor en UTC-5)
+        ]);
+        $logWritten = true;
+
+        // #93: mismo contrato de reporte que el resto — cierra el loop en sync_events
+        if ($jobId) {
+            $reportPayload = json_encode([
+                'syncType'       => 'webhook',
+                'entityType'     => 'orders', // sync_events.entity_type no tiene 'document' en el CHECK
+                'status'         => 'success',
+                'recordsUpdated' => $summary['emitted'],
+                'recordsFailed'  => 0,
+                'durationMs'     => $durationMs,
+                'errorMessage'   => null,
+                'idempotencyKey' => $jobId,
+            ]);
+            @file_get_contents(
+                rtrim(SYNKROP_DAEMON_URL, '/') . '/v1/sync/report',
+                false,
+                stream_context_create(['http' => [
+                    'method'        => 'POST',
+                    'header'        => "Content-Type: application/json\r\nX-API-Key: " . $fullConfig['daemon_api_key'] . "\r\n",
+                    'content'       => $reportPayload,
+                    'timeout'       => 5,
+                    'ignore_errors' => true,
+                ]])
+            );
+        }
+
+        http_response_code(200);
+        echo json_encode(['success' => true, 'status' => 'success', 'updated' => $summary['emitted']]);
+    } catch (\Throwable $e) {
+        Db::getInstance()->insert('synkrop_log', [
+            'id_shop'      => 1,
+            'sync_type'    => 'webhook',
+            'entity_type'  => pSQL('document'),
+            'status'       => 'failed',
+            'records_ok'   => 0,
+            'records_fail' => 1,
+            'duration_ms'  => (int)((microtime(true) - $docStart) * 1000),
+            'error_details'=> pSQL(json_encode([['code' => get_class($e), 'message' => $e->getMessage()]])),
+            'job_id'       => $jobId ? pSQL($jobId) : null,
+            'created_at'   => gmdate('Y-m-d H:i:s'),
+        ]);
+        $logWritten = true;
+
+        // #93: excepcion -> transitorio, bot-miki reintenta
+        http_response_code(503);
+        echo json_encode([
+            'success'   => false,
+            'status'    => 'failed',
+            'retryable' => true,
+            'updated'   => 0,
+            'message'   => $e->getMessage(),
+        ]);
+    }
+    exit;
+}
 
 try {
     $decryptedToken = TokenCipher::decrypt($fullConfig['bsale_api_token']);

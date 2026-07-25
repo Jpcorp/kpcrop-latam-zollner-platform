@@ -326,50 +326,70 @@ class OrderDocumentService
      */
     public function checkEmissions(): array
     {
-        $rows = Db::getInstance()->executeS(
-            'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_order_queue`
-             WHERE id_shop = ' . (int)$this->idShop . "
-             AND status = '" . self::STATUS_GENERATED . "'"
-        ) ?: [];
-
-        $summary = ['checked' => 0, 'emitted' => 0, 'closed' => 0];
-
-        foreach ($rows as $row) {
-            $summary['checked']++;
-            $emitted = $this->findEmittedDocument($row);
-            if ($emitted === null) {
-                continue;
-            }
-
-            $this->updateRow((int)$row['id_order'], [
-                'status'             => self::STATUS_EMITTED,
-                'emitted_doc_id'     => (int)$emitted['id'],
-                'emitted_doc_number' => pSQL((string)($emitted['number'] ?? '')),
-                'emitted_doc_url'    => pSQL((string)($emitted['urlPdf'] ?? '')),
-                'emitted_doc_type'   => pSQL((string)($emitted['type_name'] ?? '')),
-            ]);
-            $summary['emitted']++;
-
-            // #128: notificar al cliente final que su documento esta listo — un
-            // fallo de email nunca debe bloquear el cierre del pedido (ya se
-            // cumplio la parte que importa: el documento se emitio en Bsale).
-            try {
-                $this->notifyDocumentEmitted(
-                    (int)$row['id_order'],
-                    (string)($emitted['number'] ?? ''),
-                    (string)($emitted['urlPdf'] ?? '')
-                );
-            } catch (\Throwable $e) {
-                // silencioso a proposito — ver comentario arriba
-            }
-
-            if ($this->closeOrder((int)$row['id_order'])) {
-                $this->updateRow((int)$row['id_order'], ['status' => self::STATUS_CLOSED]);
-                $summary['closed']++;
-            }
+        // #130: antes de Fase 2 esto solo lo disparaba un clic humano en el
+        // panel (efectivamente serializado por la lentitud humana). Ahora el
+        // webhook de Bsale (topic=document) puede disparar dos llamadas casi
+        // simultaneas para la misma tienda (dos documentos emitidos con
+        // segundos de diferencia) — sin lock, dos procesos PHP podrian leer la
+        // misma fila 'generated' antes de que el primero la actualice: email
+        // duplicado (notifyDocumentEmitted) y Order::setCurrentState() (con
+        // sus hooks core) disparado dos veces. Mismo patron que ya usa
+        // upsertVariant() para el mismo tipo de problema (#115), pero a nivel
+        // de tienda completa (es un barrido, no una fila puntual).
+        $lockName = 'synkrop_checkemissions_' . $this->idShop;
+        $gotLock  = (bool)Db::getInstance()->getValue("SELECT GET_LOCK('" . pSQL($lockName) . "', 10)");
+        if (!$gotLock) {
+            throw new RuntimeException('No se pudo verificar emisiones: timeout esperando a otro proceso');
         }
 
-        return $summary;
+        try {
+            $rows = Db::getInstance()->executeS(
+                'SELECT * FROM `' . _DB_PREFIX_ . 'synkrop_order_queue`
+                 WHERE id_shop = ' . (int)$this->idShop . "
+                 AND status = '" . self::STATUS_GENERATED . "'"
+            ) ?: [];
+
+            $summary = ['checked' => 0, 'emitted' => 0, 'closed' => 0];
+
+            foreach ($rows as $row) {
+                $summary['checked']++;
+                $emitted = $this->findEmittedDocument($row);
+                if ($emitted === null) {
+                    continue;
+                }
+
+                $this->updateRow((int)$row['id_order'], [
+                    'status'             => self::STATUS_EMITTED,
+                    'emitted_doc_id'     => (int)$emitted['id'],
+                    'emitted_doc_number' => pSQL((string)($emitted['number'] ?? '')),
+                    'emitted_doc_url'    => pSQL((string)($emitted['urlPdf'] ?? '')),
+                    'emitted_doc_type'   => pSQL((string)($emitted['type_name'] ?? '')),
+                ]);
+                $summary['emitted']++;
+
+                // #128: notificar al cliente final que su documento esta listo — un
+                // fallo de email nunca debe bloquear el cierre del pedido (ya se
+                // cumplio la parte que importa: el documento se emitio en Bsale).
+                try {
+                    $this->notifyDocumentEmitted(
+                        (int)$row['id_order'],
+                        (string)($emitted['number'] ?? ''),
+                        (string)($emitted['urlPdf'] ?? '')
+                    );
+                } catch (\Throwable $e) {
+                    // silencioso a proposito — ver comentario arriba
+                }
+
+                if ($this->closeOrder((int)$row['id_order'])) {
+                    $this->updateRow((int)$row['id_order'], ['status' => self::STATUS_CLOSED]);
+                    $summary['closed']++;
+                }
+            }
+
+            return $summary;
+        } finally {
+            Db::getInstance()->execute("SELECT RELEASE_LOCK('" . pSQL($lockName) . "')");
+        }
     }
 
     /**

@@ -116,9 +116,18 @@ describe('resolveWebhookResource', () => {
     });
   });
 
+  describe('topic=document (#130: aviso de emisión, sin datos que resolver)', () => {
+    it('devuelve data=null sin llamar a la API', async () => {
+      const result = await resolveWebhookResource(mockBsale, 'document', '/v1/documents/25.json');
+
+      expect(result).toEqual({ topic: 'document', data: null });
+      expect(mockBsale.get).not.toHaveBeenCalled();
+    });
+  });
+
   describe('topic desconocido', () => {
     it('devuelve price/null como fallback', async () => {
-      const result = await resolveWebhookResource(mockBsale, 'document', '/v1/documents/1.json');
+      const result = await resolveWebhookResource(mockBsale, 'client', '/v1/clients/1.json');
 
       expect(result).toEqual({ topic: 'price', data: null });
       expect(mockBsale.get).not.toHaveBeenCalled();

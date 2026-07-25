@@ -176,19 +176,24 @@ export async function processWebhookEvent(
 
   console.log(`[webhook:resolved] jobId=${jobId ?? '-'} topic=${resolved.topic} hasData=${resolved.data !== null}`);
 
-  // Stock con data=null = colección v2 vacía → no hay nada que sincronizar
-  if (resolved.data === null && resolved.topic !== 'price') {
+  // Stock con data=null = colección v2 vacía → no hay nada que sincronizar.
+  // document con data=null es distinto a propósito (#130): no es "vacío", es la
+  // señal liviana en sí — el CMS hace su propia correlación via checkEmissions().
+  if (resolved.data === null && resolved.topic !== 'price' && resolved.topic !== 'document') {
     console.log(`[webhook:skip] jobId=${jobId ?? '-'} topic=${resolved.topic} — colección vacía, omitiendo dispatch`);
     return;
   }
 
-  // Payload quirúrgico si tenemos datos; bulk como fallback para topic=price
+  // Payload quirúrgico si tenemos datos; bulk como fallback para topic=price;
+  // aviso liviano sin bsaleData para topic=document (#130)
   const topicToEntity: Record<string, string> = {
     stock: 'stock', price: 'prices', product: 'products', variant: 'products',
   };
-  const body = resolved.data !== null
-    ? { topic: resolved.topic, bsaleData: resolved.data, send: data.send }
-    : { entity: topicToEntity[data.topic ?? ''] ?? 'products' };
+  const body = resolved.topic === 'document'
+    ? { topic: 'document', action: data.action, resourceId: data.resourceId, send: data.send }
+    : resolved.data !== null
+      ? { topic: resolved.topic, bsaleData: resolved.data, send: data.send }
+      : { entity: topicToEntity[data.topic ?? ''] ?? 'products' };
 
   await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId, body);
   console.log(`[webhook:accepted] jobId=${jobId ?? '-'} store=${data.storeId} — CMS procesará en background`);

@@ -53,10 +53,11 @@ export interface BsaleProductRaw {
 // ── Payload tipado por topic ──────────────────────────────────────────────────
 
 export type BsaleWebhookPayload =
-  | { topic: 'stock';   data: BsaleStockRaw | null }  // null = colección v2 vacía
-  | { topic: 'variant'; data: BsaleVariantRaw }
-  | { topic: 'product'; data: BsaleProductRaw }
-  | { topic: 'price';   data: null };  // price no tiene endpoint directo: fallback a bulk
+  | { topic: 'stock';    data: BsaleStockRaw | null }  // null = colección v2 vacía
+  | { topic: 'variant';  data: BsaleVariantRaw }
+  | { topic: 'product';  data: BsaleProductRaw }
+  | { topic: 'price';    data: null }   // price no tiene endpoint directo: fallback a bulk
+  | { topic: 'document'; data: null };  // #130: aviso liviano, el CMS correlaciona solo
 
 /**
  * Obtiene el recurso concreto de Bsale para un webhook dado.
@@ -123,6 +124,11 @@ export async function resolveWebhookResource(
       const data = await bsale.get<BsaleProductRaw>(url);
       return { topic: 'product', data };
     }
+    case 'document':
+      // #130: no hay nada que resolver — el CMS ya sabe correlacionar (mismo
+      // client+total+skus que usa checkEmissions() para el chequeo manual),
+      // esto es solo la señal de "revisa ahora" en vez de esperar el próximo click.
+      return { topic: 'document', data: null };
     default:
       return { topic: 'price', data: null };
   }
