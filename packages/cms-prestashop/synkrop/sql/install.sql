@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     -- #87: sync de categorias Bsale -> PS (modo automatico, MVP)
     `sync_categories`       TINYINT(1) NOT NULL DEFAULT 0,
     `category_parent_id`    INT UNSIGNED DEFAULT NULL,
+    -- #130: modo de procesamiento del flujo de ventas. 0 = semi-manual (default,
+    -- comportamiento actual: 2 clics separados en el panel). 1 = automatico
+    -- (notifica por email y encadena "Generar" + "Verificar emisiones" en un
+    -- solo clic de autorizacion). El gate humano antes de llamar a Bsale
+    -- (createSaleNote) es el mismo en ambos modos — nunca lo dispara un cron solo.
+    `order_auto_mode`       TINYINT(1) NOT NULL DEFAULT 0,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_shop` (`id_shop`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

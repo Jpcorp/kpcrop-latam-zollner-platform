@@ -15,6 +15,7 @@ class OrderDocumentServiceTest extends TestCase
         Order::reset();
         Customer::reset();
         Mail::reset();
+        Configuration::reset();
         $this->service = new OrderDocumentService(new BsaleApiClient('token-test'), 1);
     }
 
@@ -152,6 +153,46 @@ class OrderDocumentServiceTest extends TestCase
 
         $this->assertFalse($result);
         $this->assertEmpty(Mail::$calls);
+    }
+
+    // ─── notifyPendingIfAny (#130: aviso de pedidos pendientes en modo automático) ───
+
+    public function testNotifyPendingIfAnySinPendientesNoEnviaMail(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = 0;
+
+        $result = $this->service->notifyPendingIfAny();
+
+        $this->assertSame(0, $result);
+        $this->assertEmpty(Mail::$calls);
+    }
+
+    public function testNotifyPendingIfAnySinEmailDeTiendaNoEnviaMail(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = 3;
+        Configuration::$values['PS_SHOP_EMAIL'] = '';
+
+        $result = $this->service->notifyPendingIfAny();
+
+        $this->assertSame(0, $result);
+        $this->assertEmpty(Mail::$calls);
+    }
+
+    public function testNotifyPendingIfAnyConPendientesEnviaUnSoloMailResumen(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = 5;
+        Configuration::$values['PS_SHOP_EMAIL'] = 'tienda@test.cl';
+        Configuration::$values['PS_SHOP_NAME']  = 'Mi Tienda';
+
+        $result = $this->service->notifyPendingIfAny();
+
+        $this->assertSame(5, $result);
+        $this->assertCount(1, Mail::$calls, 'Debe enviar un solo email resumen, no uno por pedido');
+        [$idLang, $template, $subject, $vars, $to, $toName] = Mail::$calls[0];
+        $this->assertSame('synkrop_orders_pending', $template);
+        $this->assertSame(5, $vars['{count}']);
+        $this->assertSame('tienda@test.cl', $to);
+        $this->assertSame('Mi Tienda', $toName);
     }
 
     public function testCheckEmissionsNoBloqueaSiElEmailFalla(): void

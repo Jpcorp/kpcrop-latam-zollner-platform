@@ -1,0 +1,7 @@
+Hola,
+
+Hay {count} pedido(s) esperando autorización para generar su nota de venta en Bsale.
+
+Entra al panel de Synkrop (Catálogo > Synkrop) y usa "Autorizar pendientes" para procesarlos.
+
+Este es un aviso automático (modo automático activado en Synkrop).

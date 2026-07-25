@@ -69,6 +69,7 @@ class AdminSynkropController extends ModuleAdminController
 
         // ── Pestaña Ventas: cola de pedidos → documentos Bsale ────────────────
         $ordersEnabled = (int)($config['sync_orders'] ?? 0) === 1;
+        $orderAutoMode = (int)($config['order_auto_mode'] ?? 0) === 1; // #130
         $orderQueue    = [];
         $orderCounts   = [];
 
@@ -105,6 +106,7 @@ class AdminSynkropController extends ModuleAdminController
             'sync_logs'             => $logs,
             'ajax_url'              => $this->context->link->getAdminLink('AdminSynkrop') . '&ajax=1',
             'orders_enabled'        => $ordersEnabled,
+            'order_auto_mode'       => $orderAutoMode,
             'order_queue'           => $orderQueue,
             'order_counts'          => $orderCounts,
             'config_url'            => $this->context->link->getAdminLink('AdminModules') . '&configure=synkrop',
@@ -270,6 +272,50 @@ class AdminSynkropController extends ModuleAdminController
         ]));
     }
 
+    // ─── AJAX: Categorias — vista previa y mapeo manual (#87) ─────────────────
+
+    public function ajaxProcessPreviewCategories()    {
+        try {
+            $service = $this->buildSyncService();
+            $rows    = $service->previewCategoryMapping();
+
+            $categories = Db::getInstance()->executeS(
+                'SELECT c.id_category, cl.name, c.level_depth
+                 FROM `' . _DB_PREFIX_ . 'category` c
+                 INNER JOIN `' . _DB_PREFIX_ . 'category_lang` cl
+                     ON cl.id_category = c.id_category AND cl.id_lang = ' . (int)$this->context->language->id . '
+                 WHERE c.active = 1
+                 ORDER BY c.level_depth ASC, cl.name ASC'
+            ) ?: [];
+
+            $this->ajaxDie(json_encode([
+                'success'    => true,
+                'rows'       => $rows,
+                'categories' => $categories,
+            ]));
+        } catch (Exception $e) {
+            $this->ajaxDie(json_encode(['success' => false, 'message' => $e->getMessage()]));
+        }
+    }
+
+    public function ajaxProcessSaveCategoryMapping()    {
+        $typeId     = (int)Tools::getValue('bsale_type_id');
+        $typeName   = (string)Tools::getValue('bsale_type_name');
+        $idCategory = (int)Tools::getValue('id_ps_category');
+
+        if (!$typeId || $typeName === '' || !$idCategory) {
+            $this->ajaxDie(json_encode(['success' => false, 'message' => 'Datos incompletos.']));
+        }
+
+        try {
+            $service = $this->buildSyncService();
+            $service->saveCategoryMapping($typeId, $typeName, $idCategory);
+            $this->ajaxDie(json_encode(['success' => true, 'message' => 'Mapeo guardado.']));
+        } catch (Exception $e) {
+            $this->ajaxDie(json_encode(['success' => false, 'message' => $e->getMessage()]));
+        }
+    }
+
     // ─── AJAX: Ventas — generar notas de venta (modo semi-manual) ─────────────
 
     public function ajaxProcessGenerateOrderDoc()    {
@@ -349,6 +395,61 @@ class AdminSynkropController extends ModuleAdminController
         } catch (Exception $e) {
             $this->ajaxDie(json_encode(['success' => false, 'message' => $e->getMessage()]));
         }
+    }
+
+    // ─── AJAX: Ventas — modo automático: autorizar y procesar en un clic (#130) ─
+
+    /**
+     * Encadena "Generar" + "Verificar emisiones" (los mismos métodos que usa
+     * el modo semi-manual, sin cambios) en un solo clic. Solo visible/usable
+     * cuando order_auto_mode=1 — el gate humano sigue siendo este clic: nunca
+     * se llama a createSaleNote() sin que un usuario autorizado lo dispare.
+     */
+    public function ajaxProcessAuthorizeOrders()    {
+        set_time_limit(120);
+
+        try {
+            $config = $this->getConfig();
+            if (!(int)($config['order_auto_mode'] ?? 0)) {
+                throw new RuntimeException($this->l('El modo automático no está activado.'));
+            }
+
+            $service = $this->buildOrderDocumentService();
+        } catch (Exception $e) {
+            $this->ajaxDie(json_encode(['success' => false, 'message' => $e->getMessage()]));
+        }
+
+        $rows = Db::getInstance()->executeS(
+            'SELECT id_order FROM `' . _DB_PREFIX_ . 'synkrop_order_queue`
+             WHERE id_shop = ' . (int)$this->context->shop->id . "
+             AND status IN ('" . OrderDocumentService::STATUS_PENDING . "','" . OrderDocumentService::STATUS_ERROR . "')
+             ORDER BY id ASC LIMIT 50"
+        ) ?: [];
+        $targets = array_map(function ($r) { return (int)$r['id_order']; }, $rows);
+
+        $generated = 0;
+        $failed    = 0;
+        foreach ($targets as $target) {
+            $result = $service->createSaleNote($target);
+            $result['ok'] ? $generated++ : $failed++;
+        }
+
+        $summary = $service->checkEmissions();
+
+        $this->ajaxDie(json_encode([
+            'success'   => $failed === 0,
+            'generated' => $generated,
+            'failed'    => $failed,
+            'emitted'   => $summary['emitted'],
+            'closed'    => $summary['closed'],
+            'message'   => sprintf(
+                $this->l('%d notas generadas, %d con error. %d emitidas en Bsale, %d pedidos cerrados.'),
+                $generated,
+                $failed,
+                $summary['emitted'],
+                $summary['closed']
+            ),
+        ]));
     }
 
     // ─── Helpers privados ─────────────────────────────────────────────────────

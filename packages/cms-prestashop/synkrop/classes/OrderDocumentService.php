@@ -490,6 +490,55 @@ class OrderDocumentService
         return true;
     }
 
+    /**
+     * #130: notifica por email a la tienda cuando hay pedidos pendientes de
+     * autorizar en modo automatico — pensado para correr via cron
+     * (cli/order-notify.php). Un solo email resumen, no uno por pedido. No
+     * revisa el toggle order_auto_mode — eso lo decide el caller (el cron
+     * solo tiene sentido registrarlo cuando el modo esta activo, pero el
+     * metodo en si es solo "hay N pendientes, avisa").
+     * @return int cantidad de pedidos pendientes notificados (0 si no hay o si
+     * la tienda no tiene email configurado)
+     */
+    public function notifyPendingIfAny(): int
+    {
+        $pending = (int)Db::getInstance()->getValue(
+            'SELECT COUNT(*) FROM `' . _DB_PREFIX_ . 'synkrop_order_queue`
+             WHERE id_shop = ' . (int)$this->idShop . " AND status = '" . self::STATUS_PENDING . "'"
+        );
+
+        if ($pending < 1) {
+            return 0;
+        }
+
+        $shopEmail = (string)Configuration::get('PS_SHOP_EMAIL');
+        if ($shopEmail === '') {
+            return 0;
+        }
+
+        // Un fallo de email nunca debe romper el cron (mismo criterio que
+        // notifyDocumentEmitted() en checkEmissions() — el aviso es best-effort).
+        try {
+            Mail::Send(
+                (int)Configuration::get('PS_LANG_DEFAULT'),
+                'synkrop_orders_pending',
+                'Synkrop: pedidos esperando autorización',
+                ['{count}' => $pending],
+                $shopEmail,
+                (string)Configuration::get('PS_SHOP_NAME'),
+                null,
+                null,
+                null,
+                null,
+                _PS_MODULE_DIR_ . 'synkrop/mails/'
+            );
+        } catch (\Throwable $e) {
+            // silencioso a proposito — ver comentario arriba
+        }
+
+        return $pending;
+    }
+
     // ─── Cancelación ──────────────────────────────────────────────────────────
 
     /**
