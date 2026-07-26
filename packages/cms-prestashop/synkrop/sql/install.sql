@@ -40,6 +40,12 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     -- solo clic de autorizacion). El gate humano antes de llamar a Bsale
     -- (createSaleNote) es el mismo en ambos modos — nunca lo dispara un cron solo.
     `order_auto_mode`       TINYINT(1) NOT NULL DEFAULT 0,
+    -- #56: white-label — cacheado desde GET /v1/license/token junto con el JWT
+    -- (mismo refresh). NULL = la agencia no configuro branding, el panel cae
+    -- al "Synkrop" de siempre.
+    `agency_name`           VARCHAR(100) DEFAULT NULL,
+    `agency_logo_url`       TEXT,
+    `agency_brand_color`    VARCHAR(7) DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_shop` (`id_shop`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

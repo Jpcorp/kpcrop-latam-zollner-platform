@@ -112,6 +112,11 @@ class AdminSynkropController extends ModuleAdminController
             'config_url'            => $this->context->link->getAdminLink('AdminModules') . '&configure=synkrop',
             // #87: boton "Categorias" solo visible si la feature esta activada
             'category_sync_enabled' => (int)($config['sync_categories'] ?? 0) === 1,
+            // #56: white-label — vacio/NULL si la agencia no configuro nada,
+            // el .tpl cae al branding "Synkrop" por defecto en ese caso.
+            'agency_name'           => $config['agency_name'] ?? '',
+            'agency_logo_url'       => $config['agency_logo_url'] ?? '',
+            'agency_brand_color'    => $config['agency_brand_color'] ?? '',
         ]);
 
         $this->content = $this->context->smarty->fetch(

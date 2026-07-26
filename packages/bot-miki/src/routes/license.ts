@@ -27,6 +27,12 @@ export async function licenseRoute(app: FastifyInstance) {
               plan:      { type: 'string', enum: ['starter', 'growth', 'agency'] },
               features:  { type: 'array', items: { type: 'string' } },
               maxStores: { type: 'number' },
+              // #56: white-label básico — texto plano, fuera del JWT firmado
+              // (no hay ninguna razon para que esto viaje autenticado/firmado,
+              // es solo texto para mostrar en un panel).
+              agencyName:      { type: 'string', nullable: true },
+              agencyLogoUrl:   { type: 'string', nullable: true },
+              agencyBrandColor: { type: 'string', nullable: true },
             },
           },
           401: { type: 'object', properties: { code: { type: 'string' }, message: { type: 'string' } } },
@@ -80,6 +86,9 @@ export async function licenseRoute(app: FastifyInstance) {
           features: license.features,
           plan: license.plan,
           maxStores: license.max_stores,
+          agencyName: license.agency_name,
+          agencyLogoUrl: license.agency_logo_url,
+          agencyBrandColor: license.agency_brand_color,
         });
     },
   );

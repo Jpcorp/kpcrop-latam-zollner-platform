@@ -5,7 +5,20 @@
 
 <div class="panel" id="synkrop-app">
   <div class="panel-heading">
-    <i class="icon-refresh"></i>&nbsp;{l s='Synkrop' mod='synkrop'}
+    {* #56: white-label basico — si la agencia configuro nombre/logo, se muestra
+       su marca acá en vez de "Synkrop". Sin configurar (caso mas comun hoy):
+       cae al branding de siempre, cero cambio visual. *}
+    {if $agency_name}
+      {if $agency_logo_url}
+        <img src="{$agency_logo_url|escape:'html':'UTF-8'}" alt="{$agency_name|escape:'html':'UTF-8'}"
+             style="height:20px;vertical-align:middle;margin-right:6px">
+      {else}
+        <i class="icon-refresh"></i>&nbsp;
+      {/if}
+      {$agency_name|escape:'html':'UTF-8'}
+    {else}
+      <i class="icon-refresh"></i>&nbsp;{l s='Synkrop' mod='synkrop'}
+    {/if}
     <span class="panel-heading-action">
       <a class="list-toolbar-btn" href="{$link->getAdminLink('AdminModules')}&configure=synkrop">
         <i class="process-icon-configure"></i>&nbsp;{l s='Configuracion avanzada' mod='synkrop'}
