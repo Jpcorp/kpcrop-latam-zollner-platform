@@ -367,6 +367,88 @@ class SynkropService
         return (int)Configuration::get('PS_HOME_CATEGORY');
     }
 
+    /**
+     * #87: vista previa del mapeo de categorias, de solo lectura (no crea ni
+     * escribe nada). Misma resolucion por nombre que resolveOrCreateCategory(),
+     * para que el usuario revise (o sobreescriba manualmente via
+     * saveCategoryMapping()) antes de que syncCategories() la aplique.
+     */
+    public function previewCategoryMapping(): array
+    {
+        $parentId = (int)(Db::getInstance()->getValue(
+            'SELECT category_parent_id FROM `' . _DB_PREFIX_ . 'synkrop_config` WHERE id_shop = ' . $this->idShop
+        )) ?: (int)Configuration::get('PS_HOME_CATEGORY');
+
+        $existingMap = Db::getInstance()->executeS(
+            'SELECT bsale_type_id, id_ps_category FROM `' . _DB_PREFIX_ . 'synkrop_category_map`
+             WHERE id_shop = ' . $this->idShop . ' AND active = 1'
+        ) ?: [];
+        $mapByType = [];
+        foreach ($existingMap as $m) {
+            $mapByType[(int)$m['bsale_type_id']] = (int)$m['id_ps_category'];
+        }
+
+        $types = $this->bsale->getAll('/v1/product_types.json');
+        $rows  = [];
+
+        foreach ($types as $type) {
+            $typeId   = (int)($type['id'] ?? 0);
+            $typeName = trim((string)($type['name'] ?? ''));
+            $typeName = trim(preg_replace('/[<>{};=#\\x00-\\x1F]/u', '', $typeName));
+            if (!$typeId || $typeName === '') {
+                continue;
+            }
+
+            if (isset($mapByType[$typeId])) {
+                $rows[] = [
+                    'bsale_type_id'   => $typeId,
+                    'bsale_type_name' => $typeName,
+                    'id_ps_category'  => $mapByType[$typeId],
+                    'source'          => 'manual',
+                ];
+                continue;
+            }
+
+            $existingCategory = Db::getInstance()->getValue(
+                'SELECT cl.id_category FROM `' . _DB_PREFIX_ . 'category_lang` cl
+                 INNER JOIN `' . _DB_PREFIX_ . 'category` c ON c.id_category = cl.id_category
+                 WHERE cl.name = "' . pSQL($typeName) . '" AND c.id_parent = ' . $parentId
+            );
+
+            $rows[] = [
+                'bsale_type_id'   => $typeId,
+                'bsale_type_name' => $typeName,
+                'id_ps_category'  => $existingCategory ? (int)$existingCategory : null,
+                'source'          => $existingCategory ? 'reuse' : 'create',
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * #87: guarda (o sobreescribe) un mapeo manual bsale_type_id -> id_ps_category
+     * elegido por el usuario en la vista previa. No crea categorias — solo
+     * apunta a una que el usuario ya eligio en el dropdown.
+     */
+    public function saveCategoryMapping(int $bsaleTypeId, string $bsaleTypeName, int $idPsCategory): void
+    {
+        $exists = Db::getInstance()->getValue(
+            'SELECT id_category FROM `' . _DB_PREFIX_ . 'category` WHERE id_category = ' . $idPsCategory
+        );
+        if (!$exists) {
+            throw new RuntimeException("La categoría #{$idPsCategory} no existe en PrestaShop.");
+        }
+
+        Db::getInstance()->execute(
+            'INSERT INTO `' . _DB_PREFIX_ . 'synkrop_category_map`
+             (id_shop, bsale_type_id, bsale_type_name, id_ps_category, active)
+             VALUES (' . $this->idShop . ', ' . $bsaleTypeId . ', "' . pSQL($bsaleTypeName) . '", ' . $idPsCategory . ', 1)
+             ON DUPLICATE KEY UPDATE bsale_type_name = VALUES(bsale_type_name),
+                                     id_ps_category = VALUES(id_ps_category), active = 1'
+        );
+    }
+
     private function syncProducts(): SyncResult
     {
         $start  = microtime(true);

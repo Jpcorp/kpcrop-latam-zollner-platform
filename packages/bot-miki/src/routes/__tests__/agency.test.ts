@@ -4,10 +4,11 @@ import type { Queue } from 'bullmq';
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
-const { mockExecuteTakeFirst, mockExecute, mockQueueAdd } = vi.hoisted(() => ({
+const { mockExecuteTakeFirst, mockExecute, mockQueueAdd, mockUpdateExecuteTakeFirstOrThrow } = vi.hoisted(() => ({
   mockExecuteTakeFirst: vi.fn(),
   mockExecute: vi.fn().mockResolvedValue([]),
   mockQueueAdd: vi.fn().mockResolvedValue(undefined),
+  mockUpdateExecuteTakeFirstOrThrow: vi.fn(),
 }));
 
 vi.mock('../../config.js', () => ({
@@ -27,6 +28,9 @@ vi.mock('../../config.js', () => ({
 vi.mock('../../infrastructure/database.js', () => {
   const chain: Record<string, unknown> = {
     executeTakeFirst: mockExecuteTakeFirst,
+    // #56: mismo mock que executeTakeFirst — a los tests de GET /agency/profile
+    // no les importa distinguir el método, solo encolar valores con mockResolvedValueOnce.
+    executeTakeFirstOrThrow: mockExecuteTakeFirst,
     execute: mockExecute,
   };
   chain['selectFrom'] = () => chain;
@@ -34,7 +38,15 @@ vi.mock('../../infrastructure/database.js', () => {
   chain['where']       = () => chain;
   chain['orderBy']     = () => chain;
   chain['limit']       = () => chain;
-  return { db: { selectFrom: () => chain } };
+
+  const updateChain: Record<string, unknown> = {
+    executeTakeFirstOrThrow: mockUpdateExecuteTakeFirstOrThrow,
+  };
+  updateChain['set']          = () => updateChain;
+  updateChain['where']        = () => updateChain;
+  updateChain['returningAll'] = () => updateChain;
+
+  return { db: { selectFrom: () => chain, updateTable: () => updateChain } };
 });
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -264,6 +276,147 @@ describe('GET /v1/agency/clients/:storeId/logs', () => {
     expect(body.storeId).toBe('store-1');
     expect(body.logs).toHaveLength(1);
     expect(body.logs[0]).toMatchObject({ status: 'success', recordsUpdated: 12 });
+    await app.close();
+  });
+});
+
+describe('GET /v1/agency/profile (#56: white-label básico)', () => {
+  it('returns 401 when X-API-Key is missing', async () => {
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({ method: 'GET', url: '/v1/agency/profile' });
+
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns null fields when the agency never configured branding', async () => {
+    mockExecuteTakeFirst
+      .mockResolvedValueOnce(activeLicense)
+      .mockResolvedValueOnce({ agency_name: null, agency_logo_url: null, agency_brand_color: null });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/agency/profile',
+      headers: { 'x-api-key': 'kp_agency' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ agencyName: null, agencyLogoUrl: null, agencyBrandColor: null });
+    await app.close();
+  });
+
+  it('returns the configured branding', async () => {
+    mockExecuteTakeFirst
+      .mockResolvedValueOnce(activeLicense)
+      .mockResolvedValueOnce({
+        agency_name: 'Agencia Demo', agency_logo_url: 'https://cdn.example.com/logo.png', agency_brand_color: '#112233',
+      });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/agency/profile',
+      headers: { 'x-api-key': 'kp_agency' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      agencyName: 'Agencia Demo', agencyLogoUrl: 'https://cdn.example.com/logo.png', agencyBrandColor: '#112233',
+    });
+    await app.close();
+  });
+});
+
+describe('PUT /v1/agency/profile (#56: white-label básico)', () => {
+  it('returns 401 when X-API-Key is missing', async () => {
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({ method: 'PUT', url: '/v1/agency/profile', payload: { agencyName: 'X' } });
+
+    expect(res.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('returns 400 when no field is provided', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce(activeLicense);
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/agency/profile',
+      headers: { 'x-api-key': 'kp_agency' },
+      payload: {},
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('NO_FIELDS');
+    await app.close();
+  });
+
+  it('returns 400 when agencyLogoUrl is not https', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce(activeLicense);
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/agency/profile',
+      headers: { 'x-api-key': 'kp_agency' },
+      payload: { agencyLogoUrl: 'http://cdn.example.com/logo.png' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    expect(res.json().code).toBe('INVALID_LOGO_URL');
+    await app.close();
+  });
+
+  it('returns 400 when agencyBrandColor is not a valid hex color', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce(activeLicense);
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/agency/profile',
+      headers: { 'x-api-key': 'kp_agency' },
+      payload: { agencyBrandColor: 'not-a-color' },
+    });
+
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('updates and returns the new branding', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce(activeLicense);
+    mockUpdateExecuteTakeFirstOrThrow.mockResolvedValueOnce({
+      agency_name: 'Agencia Demo', agency_logo_url: 'https://cdn.example.com/logo.png', agency_brand_color: '#112233',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'PUT',
+      url: '/v1/agency/profile',
+      headers: { 'x-api-key': 'kp_agency' },
+      payload: {
+        agencyName: 'Agencia Demo', agencyLogoUrl: 'https://cdn.example.com/logo.png', agencyBrandColor: '#112233',
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      agencyName: 'Agencia Demo', agencyLogoUrl: 'https://cdn.example.com/logo.png', agencyBrandColor: '#112233',
+    });
     await app.close();
   });
 });

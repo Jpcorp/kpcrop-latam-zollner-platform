@@ -134,11 +134,37 @@ describe('POST /v1/webhooks/bsale', () => {
     const res = await app.inject({
       method: 'POST',
       url: '/v1/webhooks/bsale',
-      payload: { ...validPayload, topic: 'document' },
+      payload: { ...validPayload, topic: 'client' },
     });
 
     expect(res.statusCode).toBe(200);
     expect(mockQueueAdd).not.toHaveBeenCalled();
+    await app.close();
+  });
+
+  it('#130: topic=document ya no se ignora — encola con entityType=orders', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'store-uuid-6',
+      license_id: 'lic-uuid-6',
+      bsale_integration_id: 42,
+      store_name: 'Tienda Test 6',
+      cms_type: 'prestashop',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: { ...validPayload, topic: 'document', resource: '/v1/documents/25.json', resourceId: '25' },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockQueueAdd).toHaveBeenCalledTimes(1);
+
+    const [, jobData] = mockQueueAdd.mock.calls[0];
+    expect(jobData).toMatchObject({ topic: 'document', entityType: 'orders' });
     await app.close();
   });
 

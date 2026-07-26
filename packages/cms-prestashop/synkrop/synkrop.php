@@ -288,6 +288,7 @@ class Synkrop extends Module
             'bsale_office_id'      => $officeId ?: null,
             'daemon_api_key'       => pSQL($apiKey),
             'sync_orders'          => $syncOrders,
+            'order_auto_mode'      => (int)Tools::getValue('SYNKROP_ORDER_AUTO_MODE', 0),
             'order_trigger_states' => pSQL($triggerStates),
             'order_vat_rate'       => $vatRate,
             'shipping_sku'         => pSQL(trim((string)Tools::getValue('SYNKROP_SHIPPING_SKU', ''))),
@@ -354,6 +355,16 @@ class Synkrop extends Module
                         'values'  => [
                             ['id' => 'sync_orders_on',  'value' => 1, 'label' => $this->l('Sí')],
                             ['id' => 'sync_orders_off', 'value' => 0, 'label' => $this->l('No')],
+                        ],
+                    ],
+                    [
+                        'type'    => 'switch',
+                        'label'   => $this->l('Modo de procesamiento de ventas'),
+                        'name'    => 'SYNKROP_ORDER_AUTO_MODE',
+                        'desc'    => $this->l('#130: Semi-manual (default) — revisas y generas cada documento a mano en el panel. Automatico — se te notifica por correo cuando hay pedidos listos y un solo clic de autorizacion genera la nota de venta y verifica su emision. En ambos modos, la nota de venta en Bsale SIEMPRE requiere ese clic humano — nunca se genera sola.'),
+                        'values'  => [
+                            ['id' => 'order_auto_mode_off', 'value' => 0, 'label' => $this->l('Semi-manual')],
+                            ['id' => 'order_auto_mode_on',  'value' => 1, 'label' => $this->l('Automatico')],
                         ],
                     ],
                     [
@@ -424,6 +435,7 @@ class Synkrop extends Module
             'SYNKROP_PRICE_LIST_ID'        => $config['bsale_price_list_id'] ?? '',
             'SYNKROP_OFFICE_ID'            => $config['bsale_office_id'] ?? '',
             'SYNKROP_SYNC_ORDERS'          => (int)($config['sync_orders'] ?? 0),
+            'SYNKROP_ORDER_AUTO_MODE'      => (int)($config['order_auto_mode'] ?? 0),
             'SYNKROP_ORDER_TRIGGER_STATES' => $config['order_trigger_states'] ?? '2',
             'SYNKROP_ORDER_VAT_RATE'       => $config['order_vat_rate'] ?? '19.00',
             'SYNKROP_SHIPPING_SKU'         => $config['shipping_sku'] ?? '',

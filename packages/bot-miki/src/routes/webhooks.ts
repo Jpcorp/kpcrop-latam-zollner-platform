@@ -57,10 +57,14 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
         return reply.code(400).send({ error: 'invalid_resource' });
       }
 
-      // Solo procesar topics relevantes para sync CMS
-      const relevantTopics = ['product', 'variant', 'stock', 'price'];
+      // Solo procesar topics relevantes para sync CMS.
+      // #130 Fase 2: 'document' se dispara cuando alguien emite una boleta/factura
+      // en Bsale sobre una nota de venta ya creada — el CMS lo usa para cerrar el
+      // pedido solo (checkEmissions()), sin esperar a que un admin clickee
+      // "Verificar emisiones" a mano.
+      const relevantTopics = ['product', 'variant', 'stock', 'price', 'document'];
       if (!relevantTopics.includes(payload.topic)) {
-        // Log para dimensionar topics no procesados (ej: document, para el flujo de ventas PS→Bsale)
+        // Log para dimensionar topics no procesados
         request.log.info(
           { topic: payload.topic, action: payload.action, cpnId: payload.cpnId, resourceId: payload.resourceId },
           'webhook con topic ignorado'
@@ -102,6 +106,11 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
           storeId:     store.id,
           tenantId:    store.tenant_id,
           syncType:    'webhook',
+          // #130: sync_events.entity_type tiene un CHECK que no incluye 'document'
+          // (sí incluye 'orders') — sin esto, el dead-letter de handleJobFailed
+          // (que cae a job.data.topic si no hay entityType) violaría el
+          // constraint y perdería el registro en silencio.
+          entityType:  payload.topic === 'document' ? 'orders' : undefined,
           resourceUrl: payload.resource,
           resourceId:  payload.resourceId,
           topic:       payload.topic,

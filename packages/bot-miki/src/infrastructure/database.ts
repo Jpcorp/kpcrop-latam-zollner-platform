@@ -16,6 +16,11 @@ interface Database {
     created_at: Generated<Date>;
     expires_at: Date | null;
     updated_at: Generated<Date>;
+    // #56: white-label básico — nullable, sin branding configurado = fallback
+    // a la marca genérica del lado del plugin.
+    agency_name: string | null;
+    agency_logo_url: string | null;
+    agency_brand_color: string | null;
   };
   tenant_stores: {
     id: Generated<string>;

@@ -132,4 +132,34 @@ describe('GET /v1/license/token', () => {
     expect(res.headers['cache-control']).toBe('private, no-store');
     await app.close();
   });
+
+  it('#56: incluye el branding de la agencia (null si no está configurado)', async () => {
+    mockExecuteTakeFirst.mockResolvedValueOnce({
+      id: 'lic-1',
+      tenant_id: 'tenant-001',
+      api_key: 'kp_valid_key',
+      status: 'active',
+      plan: 'agency',
+      features: ['sync_products'],
+      max_stores: 3,
+      agency_name: 'Agencia Demo',
+      agency_logo_url: 'https://cdn.example.com/logo.png',
+      agency_brand_color: '#112233',
+    });
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/v1/license/token?tenantId=tenant-001',
+      headers: { 'x-api-key': 'kp_valid_key' },
+    });
+
+    const body = res.json();
+    expect(body.agencyName).toBe('Agencia Demo');
+    expect(body.agencyLogoUrl).toBe('https://cdn.example.com/logo.png');
+    expect(body.agencyBrandColor).toBe('#112233');
+    await app.close();
+  });
 });

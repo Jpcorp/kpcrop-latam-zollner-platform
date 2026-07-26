@@ -801,6 +801,100 @@ class SynkropServiceTest extends TestCase
         $this->assertEquals(0, $result->failed);
     }
 
+    // ─── previewCategoryMapping / saveCategoryMapping (#87: vista previa + mapeo manual) ───
+
+    public function test_previewCategoryMapping_sin_mapeo_existente_marca_create(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_config']       = ['category_parent_id' => 2];
+        $db->queryResults['synkrop_category_map'] = []; // sin mapeos manuales guardados
+        $db->queryResults['category_lang']        = null; // no existe categoria con ese nombre
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([
+            ['id' => 10, 'name' => 'Accesorios'],
+        ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $rows    = $service->previewCategoryMapping();
+
+        $this->assertCount(1, $rows);
+        $this->assertEquals(10, $rows[0]['bsale_type_id']);
+        $this->assertEquals('Accesorios', $rows[0]['bsale_type_name']);
+        $this->assertNull($rows[0]['id_ps_category']);
+        $this->assertEquals('create', $rows[0]['source']);
+    }
+
+    public function test_previewCategoryMapping_con_categoria_existente_marca_reuse(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_config']       = ['category_parent_id' => 2];
+        $db->queryResults['synkrop_category_map'] = [];
+        $db->queryResults['category_lang']        = 55; // ya existe una categoria con ese nombre
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([
+            ['id' => 10, 'name' => 'Accesorios'],
+        ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $rows    = $service->previewCategoryMapping();
+
+        $this->assertEquals(55, $rows[0]['id_ps_category']);
+        $this->assertEquals('reuse', $rows[0]['source']);
+    }
+
+    public function test_previewCategoryMapping_con_mapeo_manual_previo_lo_marca_manual(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_config']       = ['category_parent_id' => 2];
+        $db->queryResults['synkrop_category_map'] = [
+            ['bsale_type_id' => 10, 'id_ps_category' => 99],
+        ];
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $this->bsaleMock->method('getAll')->willReturn([
+            ['id' => 10, 'name' => 'Accesorios'],
+        ]);
+
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $rows    = $service->previewCategoryMapping();
+
+        $this->assertEquals(99, $rows[0]['id_ps_category']);
+        $this->assertEquals('manual', $rows[0]['source']);
+    }
+
+    public function test_saveCategoryMapping_hace_upsert_en_category_map(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['`ps_category`'] = 99; // la categoria existe
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+        $service->saveCategoryMapping(10, 'Accesorios', 99);
+
+        $calls = array_values(array_filter(
+            $db->getCalls('execute'),
+            fn($c) => strpos($c['sql'], 'synkrop_category_map') !== false
+        ));
+        $this->assertNotEmpty($calls, 'Debe hacer upsert en synkrop_category_map');
+        $this->assertStringContainsString('ON DUPLICATE KEY UPDATE', $calls[0]['sql']);
+        $this->assertStringContainsString('99', $calls[0]['sql']);
+    }
+
+    public function test_saveCategoryMapping_lanza_si_la_categoria_no_existe(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['`ps_category`'] = null; // categoria inexistente
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/no existe/');
+        $service->saveCategoryMapping(10, 'Accesorios', 9999);
+    }
+
     // ─── resolveCategoryId vía upsertVariant (producto nuevo) ────────────────
 
     public function test_upsertVariant_producto_nuevo_usa_categoria_mapeada_si_existe(): void

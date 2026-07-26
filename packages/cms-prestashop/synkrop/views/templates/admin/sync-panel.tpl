@@ -5,7 +5,20 @@
 
 <div class="panel" id="synkrop-app">
   <div class="panel-heading">
-    <i class="icon-refresh"></i>&nbsp;{l s='Synkrop' mod='synkrop'}
+    {* #56: white-label basico — si la agencia configuro nombre/logo, se muestra
+       su marca acá en vez de "Synkrop". Sin configurar (caso mas comun hoy):
+       cae al branding de siempre, cero cambio visual. *}
+    {if $agency_name}
+      {if $agency_logo_url}
+        <img src="{$agency_logo_url|escape:'html':'UTF-8'}" alt="{$agency_name|escape:'html':'UTF-8'}"
+             style="height:20px;vertical-align:middle;margin-right:6px">
+      {else}
+        <i class="icon-refresh"></i>&nbsp;
+      {/if}
+      {$agency_name|escape:'html':'UTF-8'}
+    {else}
+      <i class="icon-refresh"></i>&nbsp;{l s='Synkrop' mod='synkrop'}
+    {/if}
     <span class="panel-heading-action">
       <a class="list-toolbar-btn" href="{$link->getAdminLink('AdminModules')}&configure=synkrop">
         <i class="process-icon-configure"></i>&nbsp;{l s='Configuracion avanzada' mod='synkrop'}
@@ -362,6 +375,15 @@
         {else}
         <div class="panel-body">
           <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            {if $order_auto_mode}
+            <button class="btn btn-primary" id="bs-orders-authorize" type="button"
+                    title="{l s='Genera la nota de venta y verifica su emision para todos los pedidos pendientes, en un solo paso' mod='synkrop'}">
+              <i class="icon-check-circle"></i>&nbsp;{l s='Autorizar pendientes' mod='synkrop'}
+            </button>
+            <span class="label label-info" title="{l s='Modo automatico activo — la nota de venta igual requiere este clic de autorizacion' mod='synkrop'}">
+              {l s='Modo automatico' mod='synkrop'}
+            </span>
+            {else}
             <button class="btn btn-primary" id="bs-orders-generate-all" type="button"
                     title="{l s='Crea la nota de venta en Bsale para todos los pedidos pendientes' mod='synkrop'}">
               <i class="icon-file-text"></i>&nbsp;{l s='Generar pendientes' mod='synkrop'}
@@ -370,6 +392,7 @@
                     title="{l s='Busca en Bsale que notas de venta ya fueron boleteadas/facturadas y cierra los pedidos' mod='synkrop'}">
               <i class="icon-refresh"></i>&nbsp;{l s='Verificar emisiones' mod='synkrop'}
             </button>
+            {/if}
             <span id="bs-orders-status" class="help-block" style="margin:0"></span>
           </div>
 
@@ -470,6 +493,30 @@
       </div>
     </div>
   </div>
+
+  {* ── CATEGORIAS: vista previa y mapeo manual (#87) ────────────────────── *}
+  {if $category_sync_enabled}
+  <div class="row">
+    <div class="col-md-12">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <i class="icon-sitemap"></i>&nbsp;{l s='Categorias — mapeo Bsale a PrestaShop' mod='synkrop'}
+        </div>
+        <div class="panel-body">
+          <p class="text-muted small" style="margin-bottom:12px">
+            {l s='Revisa como se mapeara cada tipo de producto de Bsale antes de aplicarlo con el boton "Categorias", o elige manualmente una categoria de PrestaShop distinta.' mod='synkrop'}
+          </p>
+          <button class="btn btn-default" id="bs-categories-preview" type="button">
+            <i class="icon-eye"></i>&nbsp;{l s='Vista previa' mod='synkrop'}
+          </button>
+          <span id="bs-categories-status" class="help-block" style="display:inline-block;margin:0 0 0 8px"></span>
+
+          <div id="bs-categories-table-wrap" style="margin-top:12px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {/if}
 
 </div>
 
@@ -769,13 +816,108 @@
     });
   });
 
+  // ── Categorias: vista previa + mapeo manual (#87) ───────────────────────────
+
+  var catPreviewBtn = document.getElementById('bs-categories-preview');
+  if (catPreviewBtn) {
+    catPreviewBtn.addEventListener('click', function () {
+      var status = document.getElementById('bs-categories-status');
+      var wrap    = document.getElementById('bs-categories-table-wrap');
+      fieldStatus(status, 'loading', 'Cargando…');
+      catPreviewBtn.disabled = true;
+
+      post('previewCategories', {})
+        .then(function (data) {
+          catPreviewBtn.disabled = false;
+          if (!data.success) {
+            fieldStatus(status, 'error', '✗ ' + (data.message || 'Error'));
+            return;
+          }
+          fieldStatus(status, 'success', data.rows.length + ' tipo(s) de producto encontrados.');
+          renderCategoryTable(wrap, data.rows, data.categories);
+        })
+        .catch(function (err) {
+          catPreviewBtn.disabled = false;
+          fieldStatus(status, 'error', '✗ Error de red: ' + err.message);
+        });
+    });
+  }
+
+  function renderCategoryTable(wrap, rows, categories) {
+    if (!wrap) return;
+
+    var optionsHtml = categories.map(function (c) {
+      var indent = new Array(Number(c.level_depth) + 1).join('&nbsp;&nbsp;');
+      return '<option value="' + c.id_category + '">' + indent + esc(c.name) + '</option>';
+    }).join('');
+
+    var html = '<div style="overflow-x:auto"><table class="table table-hover table-condensed" style="margin-bottom:0">'
+      + '<thead><tr>'
+      + '<th>' + esc('Tipo Bsale') + '</th>'
+      + '<th>' + esc('Categoria PrestaShop') + '</th>'
+      + '<th>' + esc('Origen') + '</th>'
+      + '<th class="text-right">' + esc('Accion') + '</th>'
+      + '</tr></thead><tbody>';
+
+    rows.forEach(function (row) {
+      var sourceLabel = row.source === 'manual' ? '<span class="label label-primary">Manual</span>'
+                       : row.source === 'reuse'  ? '<span class="label label-info">Reutiliza existente</span>'
+                       : '<span class="label label-default">Se creara nueva</span>';
+
+      html += '<tr data-type-id="' + row.bsale_type_id + '" data-type-name="' + esc(row.bsale_type_name) + '">'
+        + '<td>' + esc(row.bsale_type_name) + '</td>'
+        + '<td><select class="form-control input-sm bs-cat-select" style="max-width:260px">'
+        + '<option value="">— sin mapear —</option>'
+        + optionsHtml
+        + '</select></td>'
+        + '<td>' + sourceLabel + '</td>'
+        + '<td class="text-right"><button class="btn btn-xs btn-default bs-cat-save" type="button">'
+        + '<i class="icon-save"></i>&nbsp;Guardar</button></td>'
+        + '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+    wrap.innerHTML = html;
+
+    rows.forEach(function (row) {
+      if (!row.id_ps_category) return;
+      var tr = wrap.querySelector('tr[data-type-id="' + row.bsale_type_id + '"]');
+      var sel = tr ? tr.querySelector('.bs-cat-select') : null;
+      if (sel) sel.value = String(row.id_ps_category);
+    });
+
+    wrap.querySelectorAll('.bs-cat-save').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var tr  = btn.closest('tr');
+        var sel = tr.querySelector('.bs-cat-select');
+        if (!sel.value) { return; }
+        btn.disabled = true;
+        post('saveCategoryMapping', {
+          bsale_type_id:   tr.dataset.typeId,
+          bsale_type_name: tr.dataset.typeName,
+          id_ps_category:  sel.value,
+        }).then(function (data) {
+          btn.disabled = false;
+          if (data.success) {
+            btn.innerHTML = '<i class="icon-check"></i>&nbsp;Guardado';
+          } else {
+            alert(data.message || 'Error al guardar');
+          }
+        }).catch(function (err) {
+          btn.disabled = false;
+          alert('Error de red: ' + err.message);
+        });
+      });
+    });
+  }
+
   // ── Ventas: pedidos → documentos Bsale ─────────────────────────────────────
 
   var ordersStatus = document.getElementById('bs-orders-status');
 
   function ordersAction(action, params, btn, busyLabel) {
     var buttons = document.querySelectorAll(
-      '#bs-orders-generate-all, #bs-orders-check-emissions, .bs-order-generate'
+      '#bs-orders-generate-all, #bs-orders-check-emissions, #bs-orders-authorize, .bs-order-generate'
     );
     buttons.forEach(function (b) { b.disabled = true; });
     fieldStatus(ordersStatus, 'loading', busyLabel);
@@ -816,6 +958,13 @@
         'Generando nota de venta del pedido...');
     });
   });
+
+  var authorizeBtn = document.getElementById('bs-orders-authorize');
+  if (authorizeBtn) {
+    authorizeBtn.addEventListener('click', function () {
+      ordersAction('AuthorizeOrders', {}, authorizeBtn, 'Autorizando y procesando pedidos pendientes...');
+    });
+  }
 
 }());
 </script>

@@ -228,4 +228,100 @@ export async function agencyRoute(app: FastifyInstance, opts: { queue: Queue<Syn
       });
     },
   );
+
+  // ─── GET /v1/agency/profile (#56: white-label básico) ───────────────────────
+
+  app.get(
+    '/agency/profile',
+    {
+      schema: {
+        tags: ['agency'],
+        summary: 'Obtener el branding (white-label) configurado por la agencia',
+        security: [{ apiKey: [] }],
+        response: {
+          200: {
+            type: 'object',
+            properties: {
+              agencyName:       { type: 'string', nullable: true },
+              agencyLogoUrl:    { type: 'string', nullable: true },
+              agencyBrandColor: { type: 'string', nullable: true },
+            },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const license = await resolveAgencyLicense(request.headers['x-api-key'] as string | undefined, reply);
+      if (!license) return;
+
+      const row = await db
+        .selectFrom('licenses')
+        .select(['agency_name', 'agency_logo_url', 'agency_brand_color'])
+        .where('id', '=', license.id)
+        .executeTakeFirstOrThrow();
+
+      return reply.send({
+        agencyName:       row.agency_name,
+        agencyLogoUrl:    row.agency_logo_url,
+        agencyBrandColor: row.agency_brand_color,
+      });
+    },
+  );
+
+  // ─── PUT /v1/agency/profile (#56: white-label básico) ───────────────────────
+
+  app.put<{ Body: { agencyName?: string; agencyLogoUrl?: string; agencyBrandColor?: string } }>(
+    '/agency/profile',
+    {
+      schema: {
+        tags: ['agency'],
+        summary: 'Configurar el branding (white-label) de la agencia',
+        security: [{ apiKey: [] }],
+        body: {
+          type: 'object',
+          properties: {
+            agencyName:       { type: 'string', minLength: 1, maxLength: 100 },
+            agencyLogoUrl:    { type: 'string', minLength: 1, maxLength: 500 },
+            // #C2 (hex de 6 dígitos, con #) — mismo formato que un <input type="color">
+            agencyBrandColor: { type: 'string', pattern: '^#[0-9a-fA-F]{6}$' },
+          },
+        },
+      },
+    },
+    async (request, reply) => {
+      const license = await resolveAgencyLicense(request.headers['x-api-key'] as string | undefined, reply);
+      if (!license) return;
+
+      const body = request.body ?? {};
+
+      // Solo https:// — este valor termina en un <img src="..."> del lado del
+      // plugin; restringir el esquema es higiene barata, sin necesidad de un
+      // validador de URLs completo para un caso "básico".
+      if (body.agencyLogoUrl !== undefined && !body.agencyLogoUrl.startsWith('https://')) {
+        return reply.code(400).send({ code: 'INVALID_LOGO_URL', message: 'agencyLogoUrl debe empezar con https://' });
+      }
+
+      const updates: Record<string, string> = {};
+      if (body.agencyName !== undefined) updates.agency_name = body.agencyName;
+      if (body.agencyLogoUrl !== undefined) updates.agency_logo_url = body.agencyLogoUrl;
+      if (body.agencyBrandColor !== undefined) updates.agency_brand_color = body.agencyBrandColor;
+
+      if (Object.keys(updates).length === 0) {
+        return reply.code(400).send({ code: 'NO_FIELDS', message: 'Ningún campo para actualizar' });
+      }
+
+      const row = await db
+        .updateTable('licenses')
+        .set(updates)
+        .where('id', '=', license.id)
+        .returningAll()
+        .executeTakeFirstOrThrow();
+
+      return reply.send({
+        agencyName:       row.agency_name,
+        agencyLogoUrl:    row.agency_logo_url,
+        agencyBrandColor: row.agency_brand_color,
+      });
+    },
+  );
 }

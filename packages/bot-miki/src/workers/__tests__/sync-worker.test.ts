@@ -273,6 +273,41 @@ describe('processWebhookEvent', () => {
     });
   });
 
+  describe('#130: aviso de documento emitido (topic=document)', () => {
+    it('NO se salta el dispatch aunque resolveWebhookResource devuelva data=null', async () => {
+      const jobData = {
+        ...baseJobData, topic: 'document', action: 'put', resourceId: '25',
+        resourceUrl: '/v1/documents/25.json',
+      };
+
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'document', data: null });
+      mockFetch.mockResolvedValueOnce(okFetchResponse(0));
+
+      await processWebhookEvent(jobData, mockBsale);
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('envía { topic, action, resourceId, send } sin bsaleData (no hay nada que resolver)', async () => {
+      const jobData = {
+        ...baseJobData, topic: 'document', action: 'put', resourceId: '25',
+        resourceUrl: '/v1/documents/25.json', send: 1700000001,
+      };
+
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      mockResolveWebhookResource.mockResolvedValueOnce({ topic: 'document', data: null });
+      mockFetch.mockResolvedValueOnce(okFetchResponse(0));
+
+      await processWebhookEvent(jobData, mockBsale);
+
+      const [, fetchOpts] = mockFetch.mock.calls[0];
+      expect(JSON.parse(fetchOpts.body)).toEqual({
+        topic: 'document', action: 'put', resourceId: '25', send: 1700000001,
+      });
+    });
+  });
+
   describe('casos de error', () => {
     it('lanza error si cms_url no está configurada', async () => {
       mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce({

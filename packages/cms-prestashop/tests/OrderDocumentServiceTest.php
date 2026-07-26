@@ -15,6 +15,7 @@ class OrderDocumentServiceTest extends TestCase
         Order::reset();
         Customer::reset();
         Mail::reset();
+        Configuration::reset();
         $this->service = new OrderDocumentService(new BsaleApiClient('token-test'), 1);
     }
 
@@ -154,6 +155,46 @@ class OrderDocumentServiceTest extends TestCase
         $this->assertEmpty(Mail::$calls);
     }
 
+    // ─── notifyPendingIfAny (#130: aviso de pedidos pendientes en modo automático) ───
+
+    public function testNotifyPendingIfAnySinPendientesNoEnviaMail(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = 0;
+
+        $result = $this->service->notifyPendingIfAny();
+
+        $this->assertSame(0, $result);
+        $this->assertEmpty(Mail::$calls);
+    }
+
+    public function testNotifyPendingIfAnySinEmailDeTiendaNoEnviaMail(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = 3;
+        Configuration::$values['PS_SHOP_EMAIL'] = '';
+
+        $result = $this->service->notifyPendingIfAny();
+
+        $this->assertSame(0, $result);
+        $this->assertEmpty(Mail::$calls);
+    }
+
+    public function testNotifyPendingIfAnyConPendientesEnviaUnSoloMailResumen(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = 5;
+        Configuration::$values['PS_SHOP_EMAIL'] = 'tienda@test.cl';
+        Configuration::$values['PS_SHOP_NAME']  = 'Mi Tienda';
+
+        $result = $this->service->notifyPendingIfAny();
+
+        $this->assertSame(5, $result);
+        $this->assertCount(1, Mail::$calls, 'Debe enviar un solo email resumen, no uno por pedido');
+        [$idLang, $template, $subject, $vars, $to, $toName] = Mail::$calls[0];
+        $this->assertSame('synkrop_orders_pending', $template);
+        $this->assertSame(5, $vars['{count}']);
+        $this->assertSame('tienda@test.cl', $to);
+        $this->assertSame('Mi Tienda', $toName);
+    }
+
     public function testCheckEmissionsNoBloqueaSiElEmailFalla(): void
     {
         // #128: un fallo de Mail::Send nunca debe interrumpir checkEmissions() —
@@ -168,5 +209,33 @@ class OrderDocumentServiceTest extends TestCase
         // Send() devolvio false, pero el metodo no lanzo excepcion — eso es lo
         // que garantiza que checkEmissions() (que lo envuelve en try/catch) siga.
         $this->assertFalse($result);
+    }
+
+    // ─── checkEmissions: lock contra ejecucion concurrente (#130 Fase 2) ─────
+
+    public function testCheckEmissionsLanzaSiNoConsigueElLock(): void
+    {
+        // #130: con el webhook de Bsale (topic=document) disparando checkEmissions()
+        // automaticamente, dos llamadas casi simultaneas para la misma tienda ya
+        // son posibles (antes solo lo disparaba un clic humano) — mismo patron de
+        // lock que ya protege upsertVariant() (#115) contra el mismo problema.
+        Db::getInstance()->queryResults['GET_LOCK'] = 0; // otro proceso ya esta corriendo checkEmissions
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/timeout/');
+        $this->service->checkEmissions();
+    }
+
+    public function testCheckEmissionsLiberaElLockAlTerminar(): void
+    {
+        Db::getInstance()->queryResults['synkrop_order_queue'] = [];
+
+        $this->service->checkEmissions();
+
+        $releaseCalls = array_filter(
+            Db::getInstance()->getCalls('execute'),
+            fn($c) => strpos($c['sql'], 'RELEASE_LOCK') !== false
+        );
+        $this->assertNotEmpty($releaseCalls, 'Debe liberar el lock aunque no haya filas que procesar');
     }
 }

@@ -127,8 +127,16 @@ class LicenseClient
             [
                 'license_jwt'         => pSQL($data['token']),
                 'license_jwt_expires' => pSQL(self::formatExpiresAt($data['expiresAt'])),
+                // #56: white-label basico — texto plano fuera del JWT, se
+                // refresca con el mismo cache de 4 min. NULL si la agencia no
+                // configuro nada (el panel cae al branding por defecto).
+                'agency_name'         => isset($data['agencyName']) ? pSQL((string)$data['agencyName']) : null,
+                'agency_logo_url'     => isset($data['agencyLogoUrl']) ? pSQL((string)$data['agencyLogoUrl']) : null,
+                'agency_brand_color'  => isset($data['agencyBrandColor']) ? pSQL((string)$data['agencyBrandColor']) : null,
             ],
-            'id_shop = ' . (int)Context::getContext()->shop->id
+            'id_shop = ' . (int)Context::getContext()->shop->id,
+            0,
+            true // permite NULL (branding sin configurar)
         );
 
         return $data['token'];
