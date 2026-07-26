@@ -1,5 +1,6 @@
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createServer, type Server } from 'node:http';
 import { Queue } from 'bullmq';
 import { Redis as IORedis } from 'ioredis';
 import { buildApp } from './app.js';
@@ -35,6 +36,27 @@ const app       = (role === 'all' || role === 'api') ? buildApp(syncQueue) : nul
 const worker    = (role === 'all' || role === 'worker') ? startSyncWorker() : null;
 const scheduler = (role === 'all' || role === 'scheduler') ? startScheduler(syncQueue) : null;
 
+// #113: railway.toml define healthcheckPath="/health" a nivel de proyecto —
+// se aplica a CUALQUIER servicio nuevo (worker, scheduler) salvo que se le
+// asigne un archivo de config separado, algo que Railway solo permite por
+// servicio desde el dashboard/API, no desde este mismo archivo. En vez de
+// pelear con eso, se expone un /health minimo (sin Fastify, sin rutas reales)
+// para los roles sin servidor HTTP — barato, y el healthcheck deja de importar
+// donde se resuelva la config.
+let healthServer: Server | null = null;
+if (!app) {
+  healthServer = createServer((req, res) => {
+    if (req.url === '/health') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'ok', role, uptime: Math.floor(process.uptime()) }));
+      return;
+    }
+    res.writeHead(404);
+    res.end();
+  });
+  healthServer.listen(config.PORT, '0.0.0.0');
+}
+
 const shutdown = async (signal: string) => {
   const msg = `${signal} received — shutting down (role=${role})`;
   if (app) app.log.info(msg); else console.log(msg);
@@ -43,6 +65,7 @@ const shutdown = async (signal: string) => {
   await syncQueue.close();
   await redis.quit();
   if (app) await app.close();
+  if (healthServer) healthServer.close();
   process.exit(0);
 };
 
@@ -57,5 +80,5 @@ if (app) {
     process.exit(1);
   }
 } else {
-  console.log(`[bot-miki] rol=${role} — sin servidor HTTP, proceso en background`);
+  console.log(`[bot-miki] rol=${role} — sin servidor HTTP real, proceso en background (solo /health en :${config.PORT})`);
 }
