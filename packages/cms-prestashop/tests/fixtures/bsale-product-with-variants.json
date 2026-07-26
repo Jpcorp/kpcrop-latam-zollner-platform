@@ -1,0 +1,138 @@
+{
+    "href": "https://api.bsale.io/v1/products/5.json",
+    "id": 5,
+    "name": "Fixture Camiseta Test",
+    "description": null,
+    "classification": 1,
+    "ledgerAccount": null,
+    "costCenter": null,
+    "allowDecimal": 0,
+    "stockControl": 1,
+    "printDetailPack": 0,
+    "state": 0,
+    "prestashopProductId": 0,
+    "presashopAttributeId": 0,
+    "product_type": {
+        "href": "https://api.bsale.io/v1/product_types/1.json",
+        "id": "1"
+    },
+    "variants": {
+        "href": "https://api.bsale.io/v1/variants.json?productid=5",
+        "count": 3,
+        "limit": 25,
+        "offset": 0,
+        "items": [
+            {
+                "href": "https://api.bsale.io/v1/variants/8.json",
+                "id": 8,
+                "description": "Talla S",
+                "unlimitedStock": 0,
+                "allowNegativeStock": 0,
+                "state": 0,
+                "barCode": "FIXTURE-CAM-S",
+                "code": "FIXTURE-CAM-S",
+                "imagestionCenterCost": 0,
+                "imagestionAccount": 0,
+                "imagestionConceptCod": 0,
+                "imagestionProyectCod": 0,
+                "imagestionCategoryCod": 0,
+                "imagestionProductId": 0,
+                "serialNumber": 0,
+                "isLot": 0,
+                "prestashopCombinationId": 0,
+                "prestashopValueId": 0,
+                "product": {
+                    "href": "https://api.bsale.io/v1/products/5.json",
+                    "id": "5"
+                },
+                "attribute_values": {
+                    "href": "https://api.bsale.io/v1/variants/8/attribute_values.json"
+                },
+                "costs": {
+                    "href": "https://api.bsale.io/v1/variants/8/costs.json"
+                },
+                "discounts": {
+                    "href": "https://api.bsale.io/v1/variant/8/price_list/0/discounts.json"
+                },
+                "prices": {
+                    "href": "https://api.bsale.io/v1/price_lists//details.json?variantid=8"
+                }
+            },
+            {
+                "href": "https://api.bsale.io/v1/variants/9.json",
+                "id": 9,
+                "description": "Talla M",
+                "unlimitedStock": 0,
+                "allowNegativeStock": 0,
+                "state": 0,
+                "barCode": "FIXTURE-CAM-M",
+                "code": "FIXTURE-CAM-M",
+                "imagestionCenterCost": 0,
+                "imagestionAccount": 0,
+                "imagestionConceptCod": 0,
+                "imagestionProyectCod": 0,
+                "imagestionCategoryCod": 0,
+                "imagestionProductId": 0,
+                "serialNumber": 0,
+                "isLot": 0,
+                "prestashopCombinationId": 0,
+                "prestashopValueId": 0,
+                "product": {
+                    "href": "https://api.bsale.io/v1/products/5.json",
+                    "id": "5"
+                },
+                "attribute_values": {
+                    "href": "https://api.bsale.io/v1/variants/9/attribute_values.json"
+                },
+                "costs": {
+                    "href": "https://api.bsale.io/v1/variants/9/costs.json"
+                },
+                "discounts": {
+                    "href": "https://api.bsale.io/v1/variant/9/price_list/0/discounts.json"
+                },
+                "prices": {
+                    "href": "https://api.bsale.io/v1/price_lists//details.json?variantid=9"
+                }
+            },
+            {
+                "href": "https://api.bsale.io/v1/variants/10.json",
+                "id": 10,
+                "description": "Talla L",
+                "unlimitedStock": 0,
+                "allowNegativeStock": 0,
+                "state": 0,
+                "barCode": "FIXTURE-CAM-L",
+                "code": "FIXTURE-CAM-L",
+                "imagestionCenterCost": 0,
+                "imagestionAccount": 0,
+                "imagestionConceptCod": 0,
+                "imagestionProyectCod": 0,
+                "imagestionCategoryCod": 0,
+                "imagestionProductId": 0,
+                "serialNumber": 0,
+                "isLot": 0,
+                "prestashopCombinationId": 0,
+                "prestashopValueId": 0,
+                "product": {
+                    "href": "https://api.bsale.io/v1/products/5.json",
+                    "id": "5"
+                },
+                "attribute_values": {
+                    "href": "https://api.bsale.io/v1/variants/10/attribute_values.json"
+                },
+                "costs": {
+                    "href": "https://api.bsale.io/v1/variants/10/costs.json"
+                },
+                "discounts": {
+                    "href": "https://api.bsale.io/v1/variant/10/price_list/0/discounts.json"
+                },
+                "prices": {
+                    "href": "https://api.bsale.io/v1/price_lists//details.json?variantid=10"
+                }
+            }
+        ]
+    },
+    "product_taxes": {
+        "href": "https://api.bsale.io/v1/products/5/product_taxes.json"
+    }
+}

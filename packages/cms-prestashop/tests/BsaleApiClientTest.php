@@ -107,6 +107,19 @@ class BsaleApiClientTest extends TestCase
         $this->assertStringNotContainsString('truncado', $exception->getMessage());
     }
 
+    // ─── #32: httpCode=0 (curl no conecto — timeout/DNS/SSL) ──────────────────
+
+    public function test_BsaleApiException_code_zero_is_not_client_nor_server_error(): void
+    {
+        // #32: get() ahora lanza BsaleApiException tambien con httpCode=0
+        // (antes se tragaba en silencio, ver fix en BsaleApiClient::get()).
+        // code=0 no es un error HTTP real del cliente ni del servidor — es
+        // un fallo de conexion — asi que ninguno de los dos flags debe marcarlo.
+        $exception = new BsaleApiException(0, 'Could not resolve host');
+        $this->assertFalse($exception->isClientError());
+        $this->assertFalse($exception->isServerError());
+    }
+
     public function test_BsaleApiException_truncates_long_body(): void
     {
         $longBody = str_repeat('x', 1000);

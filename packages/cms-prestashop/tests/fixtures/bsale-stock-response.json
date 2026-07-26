@@ -1,0 +1,68 @@
+{
+    "href": "https://api.bsale.io/v1/stocks.json",
+    "count": 4,
+    "limit": 10,
+    "offset": 0,
+    "items": [
+        {
+            "href": "https://api.bsale.io/v1/stocks/1.json",
+            "id": 1,
+            "quantity": 86.0,
+            "quantityReserved": 7.0,
+            "quantityAvailable": 79.0,
+            "variant": {
+                "href": "https://api.bsale.io/v1/variants/1.json",
+                "id": "1"
+            },
+            "office": {
+                "href": "https://api.bsale.io/v1/offices/1.json",
+                "id": "1"
+            }
+        },
+        {
+            "href": "https://api.bsale.io/v1/stocks/2.json",
+            "id": 2,
+            "quantity": 88.0,
+            "quantityReserved": 3.0,
+            "quantityAvailable": 85.0,
+            "variant": {
+                "href": "https://api.bsale.io/v1/variants/2.json",
+                "id": "2"
+            },
+            "office": {
+                "href": "https://api.bsale.io/v1/offices/1.json",
+                "id": "1"
+            }
+        },
+        {
+            "href": "https://api.bsale.io/v1/stocks/3.json",
+            "id": 3,
+            "quantity": 99.0,
+            "quantityReserved": 0.0,
+            "quantityAvailable": 99.0,
+            "variant": {
+                "href": "https://api.bsale.io/v1/variants/3.json",
+                "id": "3"
+            },
+            "office": {
+                "href": "https://api.bsale.io/v1/offices/1.json",
+                "id": "1"
+            }
+        },
+        {
+            "href": "https://api.bsale.io/v1/stocks/4.json",
+            "id": 4,
+            "quantity": 99.0,
+            "quantityReserved": 2.0,
+            "quantityAvailable": 97.0,
+            "variant": {
+                "href": "https://api.bsale.io/v1/variants/4.json",
+                "id": "4"
+            },
+            "office": {
+                "href": "https://api.bsale.io/v1/offices/1.json",
+                "id": "1"
+            }
+        }
+    ]
+}

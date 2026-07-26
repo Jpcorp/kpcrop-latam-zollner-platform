@@ -1,0 +1,66 @@
+{
+    "href": "https://api.bsale.io/v1/products/3.json",
+    "id": 3,
+    "name": "Ejemplo Servicio 1",
+    "description": null,
+    "classification": 1,
+    "ledgerAccount": "",
+    "costCenter": "",
+    "allowDecimal": 0,
+    "stockControl": 0,
+    "printDetailPack": 0,
+    "state": 0,
+    "prestashopProductId": 0,
+    "presashopAttributeId": 0,
+    "product_type": {
+        "href": "https://api.bsale.io/v1/product_types/2.json",
+        "id": "2"
+    },
+    "variants": {
+        "href": "https://api.bsale.io/v1/variants.json?productid=3",
+        "count": 1,
+        "limit": 25,
+        "offset": 0,
+        "items": [
+            {
+                "href": "https://api.bsale.io/v1/variants/5.json",
+                "id": 5,
+                "description": "Cobro Mensual",
+                "unlimitedStock": 1,
+                "allowNegativeStock": 0,
+                "state": 0,
+                "barCode": "1363272658",
+                "code": "1363272658",
+                "imagestionCenterCost": 0,
+                "imagestionAccount": 0,
+                "imagestionConceptCod": 0,
+                "imagestionProyectCod": 0,
+                "imagestionCategoryCod": 0,
+                "imagestionProductId": 0,
+                "serialNumber": 0,
+                "isLot": 0,
+                "prestashopCombinationId": 0,
+                "prestashopValueId": 0,
+                "product": {
+                    "href": "https://api.bsale.io/v1/products/3.json",
+                    "id": "3"
+                },
+                "attribute_values": {
+                    "href": "https://api.bsale.io/v1/variants/5/attribute_values.json"
+                },
+                "costs": {
+                    "href": "https://api.bsale.io/v1/variants/5/costs.json"
+                },
+                "discounts": {
+                    "href": "https://api.bsale.io/v1/variant/5/price_list/0/discounts.json"
+                },
+                "prices": {
+                    "href": "https://api.bsale.io/v1/price_lists//details.json?variantid=5"
+                }
+            }
+        ]
+    },
+    "product_taxes": {
+        "href": "https://api.bsale.io/v1/products/3/product_taxes.json"
+    }
+}
