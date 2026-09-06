@@ -26,3 +26,18 @@ Deploy:
       /home/strainma/public_html/themes/AngarTheme/modules/ps_emailalerts/views/templates/hook/product.tpl
 
 Despues hay que invalidar el compilado de Smarty para que tome el template nuevo.
+
+## migrations/strainmachine_agency_branding_order_auto_mode.php
+
+Las 4 columnas de `#56` (agency branding) y `#130` (order_auto_mode) nunca se
+aplicaron en strainmachine.com. Los `.sql` del repo **no sirven ahi**: traen
+`SET @db_prefix = 'ps_'` hardcodeado y la tienda usa `pr_`. Y
+`ssh/deploy_synkrop_db.sh` solo cubre `job_id` — nunca fue un runner de
+migraciones, pese a lo que dice CLAUDE.md §5.
+
+Idempotente (`SHOW COLUMNS` antes de cada `ALTER`), se puede correr dos veces.
+
+    bash ssh/strainmachine.sh upload \
+      packages/cms-prestashop/theme-overrides/migrations/strainmachine_agency_branding_order_auto_mode.php \
+      /home/strainma/public_html/modules/synkrop/_migrate.php
+    bash ssh/strainmachine.sh run "cd /home/strainma/public_html && php modules/synkrop/_migrate.php && rm -f modules/synkrop/_migrate.php"
