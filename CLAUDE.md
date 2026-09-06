@@ -1,253 +1,172 @@
 # CLAUDE.md
 
-Guía para agentes de IA (Claude Code) que trabajan en este repositorio. Documenta qué es el
-proyecto, su historia, su stack, su arquitectura y las convenciones a respetar. Complementa al
-`README.md` (que está orientado a onboarding de desarrolladores); aquí prima el contexto que **no
-es obvio leyendo el código**.
+Guía para agentes de IA que trabajan en este repositorio. Aquí va solo lo que **no se deduce
+leyendo el código**: si borrar una línea no provoca un error, esa línea sobra.
 
 ---
 
-## 1. Qué es este proyecto
+## 1. Qué es
 
-**Producto comercial: Synkrop** — un plugin/servicio que sincroniza **productos, stock y precios**
-desde **Bsale** (ERP/POS chileno) hacia tiendas e-commerce en distintos CMS.
+**Synkrop** — producto SaaS por licencia (planes Starter / Growth / Agency, canal de agencias
+white-label en Chile, expansión a Perú) que integra **Bsale** (ERP/POS chileno) con tiendas
+e-commerce. El repo (`kpcrop-latam-zollner-platform`) es un monorepo hub-and-spoke:
+Bsale es la fuente de verdad, `bot-miki` el hub, cada plugin CMS un spoke.
 
-> ⚠️ **Nomenclatura:** el producto se llama **Synkrop**. Antes se llamaba *BsaleSync* / *bsalesync*
-> (quedan referencias históricas en migraciones SQL: `migrate-from-bsalesync.sql`). Usa siempre
-> "Synkrop" en código, docs y comunicación nueva.
+Son **dos flujos, en direcciones opuestas** — no asumas que solo existe el primero:
 
-El repositorio es la **plataforma completa** (`kpcrop-latam-zollner-platform`): un monorepo
-hub-and-spoke que conecta cualquier CMS con Bsale, con dos modos de sincronización:
+1. **Bsale → CMS (catálogo):** productos, precios, stock y categorías. Modo manual (plugin + CLI)
+   o automático (webhooks Bsale → `bot-miki` → plugin).
+2. **CMS → Bsale (ventas):** los pedidos de PrestaShop generan documentos de venta en Bsale
+   (`OrderDocumentService`, cola `synkrop_order_queue`, nota de venta → boleta/factura, estados
+   `pending→generated→emitted→closed`, hook `actionOrderStatusPostUpdate`).
 
-- **Manual** — plugin instalado en cada CMS (sync bajo demanda + CLI).
-- **Automática** — servicio central (`bot-miki`) con webhooks de Bsale, cola y reintentos.
+> ⚠️ **Nomenclatura:** el producto se llama **Synkrop**. Antes fue *BsaleSync* / *bsalesync*
+> (quedan referencias históricas en `sql/migrate-from-bsalesync.sql`). Usa "Synkrop" siempre.
 
-**Modelo de negocio:** SaaS por licencia (planes Starter / Growth / Agency), con foco en un canal
-de **agencias** (white-label) en Chile y expansión a Perú. La documentación de negocio vive en
-`docs/business/`.
-
----
-
-## 2. Historia y estado
-
-- **Inicio:** ~19 de mayo de 2026. Desarrollo activo desde entonces (74 commits al 26-jun-2026).
-- **Primer cliente en producción:** tienda **PrestaShop en `strainmachine.com`** (servidor cPanel
-  propio, no Railway). Es el cliente piloto real; el plugin PrestaShop es el paquete más maduro.
-- **Rename BsaleSync → Synkrop:** migración ya aplicada (`sql/migrate-from-bsalesync.sql`).
-- **Trazabilidad end-to-end:** se añadió correlación `job_id` entre `bot-miki` y el plugin
-  (`X-Synkrop-Job-Id` → `synkrop_log.job_id` / `sync_events.idempotency_key`).
-- **Auditoría multi-agente (jul-2026):** se revisó todo el código (seguridad, arquitectura,
-  correctitud, BD, tests). Los 25 hallazgos están respaldados como **GitHub Issues #91–#115**
-  con el label `audit: synkrop-2026-07`. Ver §8.
-
-**Madurez por paquete:**
-
-| Paquete | Estado |
-|---|---|
-| `cms-prestashop` (synkrop) | ✅ En producción (strainmachine.com) |
-| `bot-miki` | ✅ En producción (miki.keepcrop.com / Railway) |
-| `shared` | 🟡 Base mínima |
-| `cms-shopify` | ⛔ Vacío / planificado |
-| `cms-wordpress` | ⛔ Vacío / planificado |
-
----
-
-## 3. Stack tecnológico
-
-| Componente | Stack real (verificado en manifests) |
-|---|---|
-| **bot-miki** | Node.js ≥22 (ESM), TypeScript 5.4, **Fastify 5**, **BullMQ 5** (+ ioredis), **Kysely 0.27** sobre **PostgreSQL** (`pg` 8), **Zod** 3, `jsonwebtoken` 9, Swagger/OpenAPI, **Vitest** 2 |
-| **cms-prestashop** (synkrop) | **PHP ≥7.4**, **PrestaShop 1.7+** (compat 1.7.8 / 8.x en ramas `fix/*`), PSR-4 `Kpcrop\Synkrop\`, **PHPUnit 9.6**, phpcs PSR-12 |
-| **shared** (`@kpcrop/shared`) | TypeScript 5, ESM (ES2022 / NodeNext), Zod. Modelos canónicos y contratos compartidos |
-| **Monorepo** | **pnpm 9** workspaces + **Turborepo 2** |
-| **Infra** | Docker / docker-compose (local), **Railway** (prod bot-miki, Dockerfile), **Cloudflare** (DNS + edge cache), cPanel (prod PrestaShop) |
+**Estado:** en producción con un cliente piloto real, la tienda PrestaShop `strainmachine.com`
+(cPanel propio, no Railway), plugin v1.3.0. `cms-shopify` y `cms-wordpress` están vacíos.
+El negocio se documenta en `docs/business/`.
 
 > 🚫 **No migrar `bot-miki` a otro stack (p.ej. Spring Boot) salvo petición explícita del usuario.**
-> El stack Node/TS/Fastify es una decisión tomada (ver `docs/adr/ADR-002-technology-stack.md`).
+> Node/TS/Fastify es una decisión tomada (`docs/adr/ADR-002-technology-stack.md`).
 
 ---
 
-## 4. Arquitectura y flujo de datos
-
-Patrón **hub-and-spoke**: Bsale es la fuente de verdad; `bot-miki` es el hub central; cada plugin
-CMS es un spoke.
-
-### Flujo de sincronización automática (webhook)
-
-```
-Bsale  ──webhook──▶  bot-miki  ──resuelve recurso──▶  Bsale API
-(cambio de stock)    POST /v1/webhooks/bsale         (GET del recurso cambiado)
-                          │
-                          ▼
-                     BullMQ (Redis)  ──worker──▶  fetch  ──▶  plugin CMS
-                     idempotencia,               X-Synkrop-*    webhook.php
-                     attempts:5, backoff 30s                        │
-                                                                    ▼
-                                                          sync quirúrgico (una variante)
-                                                          POST /v1/sync/report (cierra el loop)
-```
-
-- **`bot-miki`** (hexagonal *nominal* — ver nota): `routes/` (API), `workers/` (BullMQ),
-  `scheduler/` (polling de fallback vía cron casero), `adapters/` (traducción de webhooks Bsale
-  v1/v2), `infrastructure/` (Kysely/Postgres, cliente HTTP Bsale), `domain/license.ts` (JWT).
-- **`cms-prestashop/synkrop`**: `webhook.php` (entrada autenticada con `hash_equals`),
-  `classes/SynkropService.php` (lógica de sync: `syncSingle` quirúrgico, `syncProducts/syncStock`
-  bulk, `upsertVariant`, mapeo variante↔producto en `ps_synkrop_product_map`),
-  `controllers/admin/AdminSynkropController.php` (panel), `cli/sync.php` (sync por cron).
-
-### Conceptos de dominio clave
+## 2. Conceptos de dominio
 
 - **Surgical vs bulk:** un webhook de `stock` resuelve **solo esa variante** y actualiza solo ese
-  producto (quirúrgico). Los `topic` de precio/manual disparan sync bulk (itera listas completas).
-- **Mapeo variante→producto:** `bot-miki` no conoce el catálogo del CMS; envía el `variantId` de
-  Bsale y el plugin lo resuelve contra `synkrop_product_map`. **El mapa se puebla solo en el sync
-  de productos** → un producto nuevo requiere product-sync antes de que su stock funcione (no es
-  self-healing; ver issue #114).
-- **Idempotencia:** `jobId = webhook_{store}_{topic}_{resourceId}_{send}` (BullMQ deduplica
-  reintentos de Bsale) + `sync_events.idempotency_key UNIQUE`.
-- **Licenciamiento:** `bot-miki` emite un JWT de licencia por `X-API-Key`; el plugin lo cachea. Ver
-  `docs/licensing/`.
-- **Trazabilidad:** `job_id` correlaciona el evento de punta a punta.
-- **Multi-tenant:** `tenant_stores` (una tienda por integración Bsale, campo `bsale_integration_id`
-  = `cpnId` del webhook) bajo una `licenses`.
+  producto. Los topics de precio/manual disparan sync bulk (itera listas completas).
+- **Mapeo variante→producto:** `bot-miki` no conoce el catálogo del CMS; manda el `variantId` de
+  Bsale y el plugin lo resuelve contra `synkrop_product_map`. El mapa se puebla en el sync de
+  productos y, si llega stock de una variante desconocida, `SynkropService::healVariantMap()` la
+  resuelve contra Bsale al vuelo (sí es self-healing).
+- **Idempotencia:** `jobId = webhook_{store}_{topic}_{resourceId}_{send}` (BullMQ deduplica los
+  reintentos de Bsale) + `sync_events.idempotency_key UNIQUE`. BullMQ **rechaza `:` en el jobId**.
+- **Licenciamiento:** `bot-miki` emite un JWT por `X-API-Key`; el plugin lo cachea y, si bot-miki
+  cae, sigue con el JWT stale hasta 24 h. Ver `docs/licensing/`.
+- **Modo degradado (#127):** `OrderDocumentService` **no recibe `LicenseClient` a propósito** — la
+  emisión de documentos no valida licencia. Añadir ahí un chequeo rompe el diseño.
+- **Trazabilidad:** `job_id` correlaciona el evento de punta a punta
+  (`X-Synkrop-Job-Id` → `synkrop_log.job_id` / `sync_events.idempotency_key`).
+- **Multi-tenant:** `tenant_stores` (una tienda por integración Bsale; `bsale_integration_id` =
+  `cpnId` del webhook) bajo una `licenses`.
 
-> ⚠️ **"Hexagonal" es nominal.** La estructura de carpetas lo sugiere, pero el dominio no contiene
-> las reglas de negocio (el mapeo real vive en PHP) y `sync-worker.ts` está acoplado a
-> infraestructura concreta. No lo trates como hexagonal estricto.
-
----
-
-## 5. Estructura del monorepo
-
-```
-kpcrop-latam-zollner-platform/
-├── packages/
-│   ├── bot-miki/              # Servicio central Node/TS (API + worker + scheduler en 1 proceso)
-│   │   ├── src/{routes,workers,scheduler,adapters,infrastructure,domain}/
-│   │   └── migrations/        # 001_initial_schema.sql, 002_seed_dev.sql (Postgres)
-│   ├── cms-prestashop/
-│   │   ├── synkrop/           # El módulo PrestaShop en sí
-│   │   │   ├── classes/       # BsaleApiClient, LicenseClient, SynkropService
-│   │   │   ├── controllers/admin/AdminSynkropController.php
-│   │   │   ├── cli/sync.php
-│   │   │   ├── sql/           # install / uninstall / migrate_* (MySQL)
-│   │   │   └── webhook.php     # endpoint público de entrada
-│   │   └── tests/             # PHPUnit
-│   ├── cms-shopify/           # (vacío / planificado)
-│   ├── cms-wordpress/         # (vacío / planificado)
-│   └── shared/                # @kpcrop/shared — modelos canónicos TS
-├── docs/                      # architecture, adr, api-contracts, business, deployment, licensing…
-├── ssh/                       # Scripts de deploy (GITIGNORED — contiene secretos, ver §7)
-├── .github/workflows/         # ci.yml, release.yml (filtrado por paths)
-├── docker-compose.yml         # Postgres 16 + Redis 7 + bot-miki (local)
-├── railway.toml               # Deploy prod bot-miki (Dockerfile)
-├── turbo.json / pnpm-workspace.yaml
-```
+> ⚠️ **"Hexagonal" es nominal.** Las carpetas lo sugieren, pero el dominio no tiene las reglas de
+> negocio (el mapeo real vive en PHP) y `sync-worker.ts` está acoplado a infraestructura concreta.
 
 ---
 
-## 6. Comandos habituales
+## 3. Ejecución y despliegue
+
+**`PROCESS_ROLE`** (`packages/bot-miki/src/index.ts`) decide qué levanta el proceso:
+`all` (default, monolito) | `api` | `worker` | `scheduler`. En producción son **3 servicios
+Railway** con la misma imagen. Dos reglas que no se ven en el código:
+
+- **Las migraciones Postgres solo corren en `all` y `api`** — no muevas `applyMigrations()` fuera
+  de ese `if` o cada réplica del worker las aplicaría en paralelo.
+- **`worker` y `scheduler` igual exponen `/health`** (servidor `node:http` mínimo, sin Fastify)
+  porque `railway.toml` aplica `healthcheckPath` a todo servicio. No lo quites.
+
+Env vars **obligatorias** (`config.ts` hace `process.exit(1)` si faltan): `ADMIN_KEY`,
+`TOKEN_ENCRYPTION_KEY` y `JWT_SECRET`, las tres ≥32 caracteres. El `.env.example` de la **raíz
+está obsoleto** (no las trae): copia `packages/bot-miki/.env.example`.
+
+**Producción:** `bot-miki` → Railway (`miki.keepcrop.com`); `synkrop` → cPanel en
+`strainmachine.com`; DNS/edge → Cloudflare. El deploy real sale de `ssh/deploy_bot_miki.sh`
+(merge `develop`→`master`), no de `release.yml` (que solo construye por tag).
+
+> 🔐 **`ssh/` está gitignored y contiene secretos en texto plano** (PAT de GitHub, tokens de
+> Railway, passphrase de `ssh/id_rsa`), junto a los scripts de deploy y utilitarios
+> (`strainmachine.sh`, `deploy_synkrop*.sh`, `bsale_sandbox.sh`, `synkrop_log_view.sh`…).
+> **Nunca los muevas fuera de `ssh/` ni los incluyas en un commit/PR**, no imprimas credenciales
+> en respuestas ni las copies a otro archivo. Conviene rotarlas.
+
+---
+
+## 4. Comandos no obvios
 
 ```bash
-# Monorepo (raíz)
-pnpm install
-pnpm build                          # turbo run build (respeta dependencias)
-pnpm --filter bot-miki dev          # bot-miki con watch (http://localhost:3000, /docs = Swagger)
-pnpm --filter bot-miki test         # Vitest
-pnpm --filter bot-miki lint         # tsc --noEmit
+pnpm build && pnpm --filter bot-miki dev   # dev NO compila (node --watch dist/): build primero
+docker compose -f docker-compose.roles.yml up --build   # laboratorio del split de roles (#113)
+./scripts/roles-lab.sh                                  # ídem, con menú; puertos propios (3001/5434/6381)
 
-# Infra local
-docker compose up postgres redis -d
-# Migración Postgres (ruta REAL): packages/bot-miki/migrations/001_initial_schema.sql
-
-# PrestaShop local (stack propio del plugin)
-cd packages/cms-prestashop && docker compose up -d   # PrestaShop 1.7.8 en :8080, MySQL en :3307
-
-# Tests PHP
-cd packages/cms-prestashop && composer test          # phpunit --testdox
+cd packages/cms-prestashop && composer test             # phpunit (unitarios)
+BSALE_SANDBOX_TOKEN=xxx composer test -- --group integration   # sandbox real; sin token se SALTAN
+cd packages/cms-prestashop && docker compose up -d      # PS 1.7.8 :8080, MySQL :3307, Mailhog
 ```
 
-> ℹ️ El `README.md` apunta la migración a `src/infrastructure/sql/…`; **la ruta real es
-> `packages/bot-miki/migrations/`**. Corregir el README si se toca.
+- `docker compose up bot-miki` exige un `packages/bot-miki/.env` real (`env_file`), no variables sueltas.
+- **CI verde ≠ tests PHP pasando:** phpcs y phpunit llevan `|| true` en `ci.yml`, y los jobs se
+  filtran por paths. Además el job `shared` invoca `pnpm --filter @kpcrop/shared lint`, script
+  que **no existe**, y el job `bot-miki` corre sin `ADMIN_KEY`/`TOKEN_ENCRYPTION_KEY`.
+- `cms-prestashop` **no tiene `package.json`** → `pnpm test` / `pnpm lint` en la raíz **nunca
+  tocan PHP**. Para el plugin es siempre `composer test` dentro del paquete.
+- **No hay formatter ni linter de estilo en el repo** (ni ESLint, ni Prettier, ni Biome, ni
+  `.editorconfig`): `lint` en TS es `tsc --noEmit`; en PHP, `phpcs --standard=PSR12` a mano.
 
 ---
 
-## 7. Despliegue
+## 5. Base de datos
 
-Hay scripts de deploy en **`ssh/`** (carpeta **gitignored** a propósito):
+Dos motores distintos: **Postgres** (bot-miki) y **MySQL/MariaDB** (plugin PrestaShop).
 
-| Script | Qué hace |
-|---|---|
-| `ssh/deploy_bot_miki.sh` | Push `develop` → crea/mergea PR a `master` → monitorea deploy en **Railway** → health check en `https://miki.keepcrop.com/health` |
-| `ssh/strainmachine.sh` | Config centralizada del **servidor PrestaShop de producción** (`strainmachine.com`, cPanel `strainma@67.222.29.249`): `ssh`, `run`, `upload/download`, `deploy-synkrop`, `deploy-db` |
-| `ssh/deploy_synkrop.sh` | Alias → `strainmachine.sh deploy-synkrop` (sube los .php del plugin por scp) |
-| `ssh/deploy_synkrop_db.sh` | Migraciones de BD en el servidor de producción |
+**Postgres — `packages/bot-miki/migrations/`:** basta con agregar un `.sql`;
+`infrastructure/migrations-runner.ts` los descubre y aplica al boot en **orden alfabético**
+(registro en `schema_migrations`).
 
-**Producción:**
-- `bot-miki` → **Railway** (Dockerfile), dominio `miki.keepcrop.com`.
-- `synkrop` (PrestaShop) → **cPanel** en `strainmachine.com` (primer cliente).
-- DNS/edge → **Cloudflare**. Dominios planificados: `api.kpcrop.com`, landing `kpcrop.com`.
+- Respeta el prefijo `NNN_`, y **nunca renombres ni edites una migración ya aplicada** (no se
+  re-ejecuta).
+- `002_seed_dev.sql` está **excluido a propósito** (filtro por nombre literal): es data de dev.
+- Cada archivo se manda como un solo `pool.query()` multi-statement → transacción implícita →
+  **`CREATE INDEX CONCURRENTLY` falla ahí**. El patrón del repo es `IF NOT EXISTS` en índices y
+  columnas, y `DROP CONSTRAINT IF EXISTS` antes de recrear un CHECK.
 
-> 🔐 **Seguridad:** los scripts de `ssh/` contienen **secretos en texto plano** (PAT de GitHub,
-> tokens de Railway, passphrase de la clave SSH privada `ssh/id_rsa`). Están gitignored, pero:
-> **nunca los muevas fuera de `ssh/` ni los incluyas en un commit/PR.** Si el usuario pide operar
-> con GitHub/Railway/servidor, extrae las credenciales de ahí, pero no las imprimas en respuestas
-> ni las persistas en otro archivo. Conviene rotarlas.
+**MySQL — `packages/cms-prestashop/synkrop/sql/`:** 11 migraciones `migrate_*.sql` aplicadas en
+producción con `ssh/deploy_synkrop_db.sh`.
 
----
-
-## 8. Problemas conocidos (auditoría jul-2026)
-
-25 hallazgos respaldados en GitHub Issues **#91–#115** (label `audit: synkrop-2026-07`). Los más
-importantes a tener presentes al tocar código:
-
-- **#91 / #92 (P0, seguridad):** `POST /v1/sync/report` sin autenticación; `ADMIN_KEY` con default
-  público en `config.ts`.
-- **#93 (P0):** `webhook.php` responde siempre `success:true` y el `finally` de `sync-worker.ts`
-  marca siempre `last_sync_status:'success'` → **eventos de stock se pierden en silencio**.
-- **#94 / #95 (P0):** falta índice en `tenant_stores.bsale_integration_id` (full scan por webhook);
-  INSERT en `sync_events` sin `onConflict` → un reintento revienta el worker.
-- **#98 (P1):** el fallback `variant.href` (fix aplicado en el resolver TS) **no** se replicó en el
-  bulk PHP `SynkropService::syncStock`.
-- **#99 (P1):** `tenant_id` tiene 3 definiciones incoherentes según el origen.
-- **#100 (P1):** el fix de timezone depende de que el servidor MySQL esté en UTC (`CURRENT_TIMESTAMP`).
-
-Consulta el issue correspondiente antes de "arreglar" algo en estas zonas: puede haber contexto.
+- Deben ser **idempotentes** con el patrón `information_schema` + stored procedure (plantilla:
+  `migrate_add_test_mode.sql`); un `ALTER TABLE` plano revienta en la segunda pasada.
+- Ese patrón usa `DELIMITER`, directiva del cliente `mysql` → **solo se aplican por CLI**, nunca
+  vía PDO ni `Db::getInstance()`.
+- Dos convenciones de prefijo fáciles de confundir: `install.sql` usa el literal `PREFIX_` que
+  `synkrop.php` sustituye por `_DB_PREFIX_`; los `migrate_*.sql` traen `SET @db_prefix = 'ps_'`
+  **hardcodeado** (otra tienda exige editar la migración a mano).
+- El MySQL de producción **no está en UTC**: fechas nuevas sin `DEFAULT CURRENT_TIMESTAMP`,
+  escritas desde PHP con `gmdate()`.
+- `error_details` es columna **JSON** con `json_valid` en MariaDB → escribe `json_encode([])`,
+  nunca `''`. El único `null` legítimo es limpiar un error previo, y exige el 5º argumento
+  `$null_values=true` de `Db::update()` (`OrderDocumentService.php:138,634`) — sin él PrestaShop
+  descarta el campo del UPDATE en silencio.
 
 ---
 
-## 9. Convenciones
+## 6. Convenciones
 
-- **Commits:** Conventional Commits con scope de paquete, en español.
-  Ej.: `fix(cms-prestashop): corregir timezone en historial`,
-  `feat(bot-miki): correlación end-to-end`. Formato `tipo(scope): descripción`.
-- **Ramas:** `develop` (integración) → PR → `master` (producción/deploy). Ramas de fix por
-  compatibilidad: `fix/php7x-compat`, `fix/ps8x-compat`, etc. No commitees directo en `master`.
-- **GitHub Issues:** título `[Área] descripción`. Labels existentes:
-  `priority: critical|high|medium|low`, `area: bot-miki|prestashop|security|infra|shared|shopify|wordpress`,
+- **Commits:** Conventional Commits en español, con scope de paquete.
+  Ej.: `fix(cms-prestashop): corregir timezone en historial`.
+- **Ramas:** `develop` (integración) → PR → `master` (producción). No commitees directo en `master`.
+- **Issues:** título `[Área] descripción`. Labels: `priority: critical|high|medium|low`,
+  `area: bot-miki|prestashop|security|infra|shared|shopify|wordpress`,
   `type: bug|chore|test|feature|docs`.
-- **Idioma:** documentación, issues y mensajes de commit en **español**. Código e identificadores en
-  inglés/español según el existente (respeta el estilo del archivo que edites).
-- **Seguridad SQL:** en PHP, **siempre** `(int)` para enteros y `pSQL()` para strings (el patrón ya
-  está aplicado; no lo rompas). En TS, Kysely parametriza.
-- **Secretos:** los `.env` reales NO se commitean (solo `.env.example`). Ver §7 para `ssh/`.
+- **Idioma:** docs, issues y commits en **español**. En código respeta el estilo del archivo.
+- **Seguridad — reglas vigentes, no las rompas:**
+  - PHP: `(int)` para enteros y `pSQL()` para strings, siempre. En TS, Kysely parametriza.
+  - El `bsale_access_token` va cifrado AES-256-GCM: escribe con `encryptToken()` y lee con
+    `decryptToken()` (`infrastructure/token-crypto.ts`), nunca texto plano.
+  - `/admin` y `/docs` van tras `adminKeyMatches(x-admin-key)` (timing-safe) + rate-limit global.
+  - **El tenant nunca se toma del body**: se deriva server-side de la `X-API-Key`.
+- **Secretos:** los `.env` reales no se commitean (solo `.env.example`). Ver `ssh/` arriba.
+- **Tests:** tras tocar un paquete, corre su suite (`vitest` / `phpunit`) antes de dar algo por hecho.
 
 ---
 
-## 10. Documentación de referencia
+## 7. Auditoría e historial
 
-| Tema | Ruta |
-|---|---|
-| Arquitectura C4 / esquema BD / manejo de errores | `docs/architecture/` |
-| Decisiones de arquitectura (ADR) | `docs/adr/` (001 modelo canónico, 002 stack, 003 idempotencia, 004 estrategia de sync) |
-| Contrato OpenAPI de bot-miki | `docs/api-contracts/demonio-openapi.yaml` |
-| Licenciamiento | `docs/licensing/` |
-| Despliegue / secrets / sync manual / webhooks | `docs/deployment/` |
-| Investigación de la API de Bsale | `docs/investigation/` |
-| Negocio (pricing, GTM, agencias, finanzas) | `docs/business/` |
-| Testing | `docs/testing/` |
+La auditoría multi-agente de jul-2026 (issues #91–#115, label `audit: synkrop-2026-07`) está
+**cerrada y desplegada**: no re-arregles esos hallazgos. Si tocas una de esas zonas y quieres el
+contexto de por qué está como está, lee el issue correspondiente en GitHub.
 
----
+Documentación por tema en `docs/` (haz `ls docs/`; la enumeración se desactualiza).
 
-_Última actualización: jul-2026. Si cambias stack, arquitectura o convenciones, actualiza este
+_Última actualización: 05-sep-2026. Si cambias stack, arquitectura o convenciones, actualiza este
 archivo en el mismo PR._
