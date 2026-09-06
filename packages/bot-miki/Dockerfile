@@ -1,5 +1,9 @@
 FROM node:22-alpine AS base
-RUN npm install -g pnpm
+# pnpm fijado a la version de packageManager en package.json: sin pin, npm baja
+# la ultima, y desde pnpm 10 el install verifica la identidad del binario nativo
+# contra el lockfile (ERR_PNPM_PNPM_ENGINE_IDENTITY_UNVERIFIABLE) — el lockfile
+# es 9.0, asi que cualquier build nuevo rompia sin que cambiara una linea del repo.
+RUN npm install -g pnpm@9.0.0
 
 FROM base AS deps
 WORKDIR /app
