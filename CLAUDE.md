@@ -142,7 +142,6 @@ aplica con el `Db` de PrestaShop:
 - `install.sql` es aparte: usa el literal `PREFIX_` que `synkrop.php` sustituye por `_DB_PREFIX_`.
 - ⚠️ **`ssh/deploy_synkrop_db.sh` NO es un runner de migraciones**: son ~70 líneas con una sola
   migración inline (`job_id`). Quedó obsoleto frente a `migrate.php`.
-
 - El MySQL de producción **no está en UTC**: fechas nuevas sin `DEFAULT CURRENT_TIMESTAMP`,
   escritas desde PHP con `gmdate()`.
 - `error_details` es columna **JSON** con `json_valid` en MariaDB → escribe `json_encode([])`,
