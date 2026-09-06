@@ -71,8 +71,15 @@ class BsaleApiClient
             return $this->get($path, $params);
         }
 
-        if ($httpCode >= 400) {
-            throw new BsaleApiException($httpCode, $body);
+        // #32: httpCode=0 (curl no llego a conectar — timeout, DNS, SSL, etc.)
+        // no estaba cubierto aca a diferencia de post()/delete(), que ya lo
+        // manejaban. Sin esto, un fallo real de red se tragaba en silencio:
+        // json_decode(false, true) ?? [] devolvia un array vacio en vez de
+        // lanzar, indistinguible de "0 productos" para el caller. Encontrado
+        // corriendo los tests de integracion reales (#32) contra un curl con
+        // problema de certificados — el bug era real, no solo del entorno.
+        if ($httpCode >= 400 || $httpCode === 0) {
+            throw new BsaleApiException($httpCode, (string)$body);
         }
 
         return json_decode($body, true) ?? [];

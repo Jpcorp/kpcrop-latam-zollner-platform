@@ -4,8 +4,8 @@ import type { Queue } from 'bullmq';
 
 // ── Hoisted mocks ─────────────────────────────────────────────────────────────
 
-const { mockExecuteTakeFirst, mockQueueAdd, mockWhere } = vi.hoisted(() => ({
-  mockExecuteTakeFirst: vi.fn(),
+const { mockExecute, mockQueueAdd, mockWhere } = vi.hoisted(() => ({
+  mockExecute: vi.fn(),
   mockQueueAdd: vi.fn().mockResolvedValue(undefined),
   mockWhere: vi.fn(),
 }));
@@ -25,7 +25,9 @@ vi.mock('../../config.js', () => ({
 
 vi.mock('../../infrastructure/database.js', () => {
   const chain: Record<string, unknown> = {
-    executeTakeFirst: mockExecuteTakeFirst,
+    // el lookup de tiendas por cpnId trae N filas (varias tiendas pueden
+    // compartir una integracion Bsale), no una sola
+    execute: mockExecute,
   };
   chain['selectAll'] = () => chain;
   chain['innerJoin'] = () => chain; // #105: webhooks.ts hace join con licenses
@@ -105,13 +107,13 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('#97: acepta la forma coleccion de stock v2 sin id en el path', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce({
-      id: 'store-uuid-3',
-      license_id: 'lic-uuid-3',
-      bsale_integration_id: 42,
-      store_name: 'Tienda Test 3',
-      cms_type: 'prestashop',
-    });
+    mockExecute.mockResolvedValueOnce([{
+        id: 'store-uuid-3',
+        license_id: 'lic-uuid-3',
+        bsale_integration_id: 42,
+        store_name: 'Tienda Test 3',
+        cms_type: 'prestashop',
+      }]);
 
     const app = buildTestApp();
     await app.ready();
@@ -143,13 +145,13 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('#130: topic=document ya no se ignora — encola con entityType=orders', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce({
-      id: 'store-uuid-6',
-      license_id: 'lic-uuid-6',
-      bsale_integration_id: 42,
-      store_name: 'Tienda Test 6',
-      cms_type: 'prestashop',
-    });
+    mockExecute.mockResolvedValueOnce([{
+        id: 'store-uuid-6',
+        license_id: 'lic-uuid-6',
+        bsale_integration_id: 42,
+        store_name: 'Tienda Test 6',
+        cms_type: 'prestashop',
+      }]);
 
     const app = buildTestApp();
     await app.ready();
@@ -169,7 +171,7 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('returns 200 and does not enqueue when cpnId is unknown', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce(undefined);
+    mockExecute.mockResolvedValueOnce([]);
 
     const app = buildTestApp();
     await app.ready();
@@ -186,13 +188,13 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('returns 200 and enqueues job when store is found', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce({
-      id: 'store-uuid-1',
-      license_id: 'lic-uuid-1',
-      bsale_integration_id: 42,
-      store_name: 'Tienda Test',
-      cms_type: 'prestashop',
-    });
+    mockExecute.mockResolvedValueOnce([{
+        id: 'store-uuid-1',
+        license_id: 'lic-uuid-1',
+        bsale_integration_id: 42,
+        store_name: 'Tienda Test',
+        cms_type: 'prestashop',
+      }]);
 
     const app = buildTestApp();
     await app.ready();
@@ -219,13 +221,13 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('assigns exponential backoff with 30s base delay', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce({
-      id: 'store-uuid-2',
-      license_id: 'lic-uuid-2',
-      bsale_integration_id: 42,
-      store_name: 'Tienda Test 2',
-      cms_type: 'prestashop',
-    });
+    mockExecute.mockResolvedValueOnce([{
+        id: 'store-uuid-2',
+        license_id: 'lic-uuid-2',
+        bsale_integration_id: 42,
+        store_name: 'Tienda Test 2',
+        cms_type: 'prestashop',
+      }]);
 
     const app = buildTestApp();
     await app.ready();
@@ -242,13 +244,13 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('#115: limpia jobs completados/fallidos de Redis (removeOnComplete/removeOnFail)', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce({
-      id: 'store-uuid-3',
-      license_id: 'lic-uuid-3',
-      bsale_integration_id: 42,
-      store_name: 'Tienda Test 3',
-      cms_type: 'prestashop',
-    });
+    mockExecute.mockResolvedValueOnce([{
+        id: 'store-uuid-3',
+        license_id: 'lic-uuid-3',
+        bsale_integration_id: 42,
+        store_name: 'Tienda Test 3',
+        cms_type: 'prestashop',
+      }]);
 
     const app = buildTestApp();
     await app.ready();
@@ -266,13 +268,13 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('#127: filtra por status=active de la licencia antes de encolar', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce({
-      id: 'store-uuid-5',
-      license_id: 'lic-uuid-5',
-      bsale_integration_id: 42,
-      store_name: 'Tienda Test 5',
-      cms_type: 'prestashop',
-    });
+    mockExecute.mockResolvedValueOnce([{
+        id: 'store-uuid-5',
+        license_id: 'lic-uuid-5',
+        bsale_integration_id: 42,
+        store_name: 'Tienda Test 5',
+        cms_type: 'prestashop',
+      }]);
 
     const app = buildTestApp();
     await app.ready();
@@ -288,7 +290,7 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('#127: con licencia suspendida (query no devuelve store) no encola — igual que tenant desconocido', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce(undefined);
+    mockExecute.mockResolvedValueOnce([]);
 
     const app = buildTestApp();
     await app.ready();
@@ -305,13 +307,13 @@ describe('POST /v1/webhooks/bsale', () => {
   });
 
   it('#115: incluye send en el job encolado (para descartar eventos de stock fuera de orden)', async () => {
-    mockExecuteTakeFirst.mockResolvedValueOnce({
-      id: 'store-uuid-4',
-      license_id: 'lic-uuid-4',
-      bsale_integration_id: 42,
-      store_name: 'Tienda Test 4',
-      cms_type: 'prestashop',
-    });
+    mockExecute.mockResolvedValueOnce([{
+        id: 'store-uuid-4',
+        license_id: 'lic-uuid-4',
+        bsale_integration_id: 42,
+        store_name: 'Tienda Test 4',
+        cms_type: 'prestashop',
+      }]);
 
     const app = buildTestApp();
     await app.ready();
@@ -324,6 +326,45 @@ describe('POST /v1/webhooks/bsale', () => {
 
     const [, jobData] = mockQueueAdd.mock.calls[0];
     expect(jobData.send).toBe(validPayload.send);
+    await app.close();
+  });
+
+  it('abanica el webhook a TODAS las tiendas que comparten el mismo cpnId', async () => {
+    // 3 e-commerce contra un solo Bsale: dos bajo una licencia multi-tienda
+    // (growth/agency) y uno bajo licencia propia. Antes esto era
+    // executeTakeFirst() sin order by — se encolaba para UNA sola tienda
+    // elegida arbitrariamente por Postgres y las otras dos no se enteraban.
+    mockExecute.mockResolvedValueOnce([
+      { id: 'store-a', license_id: 'lic-1', tenant_id: 'tenant-1' },
+      { id: 'store-b', license_id: 'lic-2', tenant_id: 'tenant-2' },
+      { id: 'store-c', license_id: 'lic-2', tenant_id: 'tenant-2' },
+    ]);
+
+    const app = buildTestApp();
+    await app.ready();
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/v1/webhooks/bsale',
+      payload: validPayload,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockQueueAdd).toHaveBeenCalledTimes(3);
+
+    expect(mockQueueAdd.mock.calls.map(c => c[1].storeId)).toEqual(['store-a', 'store-b', 'store-c']);
+    // cada tienda conserva el tenant de SU licencia — sin esto, las tiendas de
+    // licencias distintas escribirian sync_events bajo el tenant equivocado
+    expect(mockQueueAdd.mock.calls.map(c => c[1].tenantId)).toEqual(['tenant-1', 'tenant-2', 'tenant-2']);
+
+    // el jobId lleva store.id: la dedup de reintentos de Bsale sigue viva por
+    // tienda, pero un mismo webhook ya no colisiona entre tiendas
+    const jobIds = mockQueueAdd.mock.calls.map(c => c[2].jobId);
+    expect(jobIds).toEqual([
+      'webhook_store-a_product_952_1700000000',
+      'webhook_store-b_product_952_1700000000',
+      'webhook_store-c_product_952_1700000000',
+    ]);
     await app.close();
   });
 });

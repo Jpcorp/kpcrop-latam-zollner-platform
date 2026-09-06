@@ -85,50 +85,71 @@ export async function webhooksRoute(app: FastifyInstance, opts: { queue: Queue<S
       // permite el sync MANUAL desde el panel, con limite de frecuencia). Antes
       // encolaba igual y el CMS recien rechazaba en syncSingle() — desperdiciaba
       // rate-limit de Bsale y un ciclo de worker en trabajo que se iba a descartar.
-      const store = await db
+      // Varias tiendas pueden compartir una misma integracion Bsale (un cpnId):
+      // 3 e-commerce distintos tirando del mismo ERP, sea bajo una licencia
+      // multi-tienda (plan growth/agency, max_stores) o bajo licencias
+      // separadas. Antes esto era executeTakeFirst() SIN order by: Bsale
+      // mandaba un webhook, se encolaba para UNA sola tienda elegida
+      // arbitrariamente por Postgres, y las demas nunca se enteraban del
+      // cambio en tiempo real (solo lo veian en el siguiente ciclo de polling).
+      const stores = await db
         .selectFrom('tenant_stores as s')
         .innerJoin('licenses as l', 'l.id', 's.license_id')
         .select(['s.id', 's.license_id', 'l.tenant_id'])
         .where('s.bsale_integration_id', '=', payload.cpnId)
         .where('l.status', '=', 'active')
-        .executeTakeFirst();
+        .execute();
 
-      if (!store) {
+      if (stores.length === 0) {
         // 200 para que Bsale no reintente con tenants no registrados
         return reply.code(200).send();
       }
 
-      // Encolar job — el worker hace la segunda llamada a Bsale para obtener datos completos
-      const idempotencyKey = `webhook_${store.id}_${payload.topic}_${payload.resourceId}_${payload.send}`;
-      await queue.add(
-        'bsale-webhook',
-        {
-          storeId:     store.id,
-          tenantId:    store.tenant_id,
-          syncType:    'webhook',
-          // #130: sync_events.entity_type tiene un CHECK que no incluye 'document'
-          // (sí incluye 'orders') — sin esto, el dead-letter de handleJobFailed
-          // (que cae a job.data.topic si no hay entityType) violaría el
-          // constraint y perdería el registro en silencio.
-          entityType:  payload.topic === 'document' ? 'orders' : undefined,
-          resourceUrl: payload.resource,
-          resourceId:  payload.resourceId,
-          topic:       payload.topic,
-          action:      payload.action,
-          send:        payload.send, // #115: para que el CMS descarte eventos de stock fuera de orden
-        },
-        {
-          jobId:    idempotencyKey,
-          attempts: 5,
-          backoff:  { type: 'exponential', delay: 30_000 },
-          // #115: sin esto, Redis acumula un job completado por cada webhook
-          // de Bsale para siempre — con feeds de alto volumen (stock/precio
-          // cambiando seguido) crece sin techo. Mismos valores que ya usa
-          // el scheduler para los jobs de polling.
-          removeOnComplete: { age: 86_400 },
-          removeOnFail:     { age: 604_800 },
-        },
-      );
+      if (stores.length > 1) {
+        // Sin esto, "una de las tiendas no se actualizo" es indepurable:
+        // no queda rastro de a cuantas se abanico el evento.
+        request.log.info(
+          { cpnId: payload.cpnId, topic: payload.topic, resourceId: payload.resourceId, stores: stores.length },
+          'webhook abanicado a varias tiendas'
+        );
+      }
+
+      // Encolar un job POR TIENDA — el worker hace la segunda llamada a Bsale
+      // para obtener datos completos. El jobId ya incluye store.id, asi que la
+      // idempotencia por reintento de Bsale se mantiene por tienda: el mismo
+      // webhook reintentado deduplica, pero no colisiona entre tiendas.
+      for (const store of stores) {
+        const idempotencyKey = `webhook_${store.id}_${payload.topic}_${payload.resourceId}_${payload.send}`;
+        await queue.add(
+          'bsale-webhook',
+          {
+            storeId:     store.id,
+            tenantId:    store.tenant_id,
+            syncType:    'webhook',
+            // #130: sync_events.entity_type tiene un CHECK que no incluye 'document'
+            // (sí incluye 'orders') — sin esto, el dead-letter de handleJobFailed
+            // (que cae a job.data.topic si no hay entityType) violaría el
+            // constraint y perdería el registro en silencio.
+            entityType:  payload.topic === 'document' ? 'orders' : undefined,
+            resourceUrl: payload.resource,
+            resourceId:  payload.resourceId,
+            topic:       payload.topic,
+            action:      payload.action,
+            send:        payload.send, // #115: para que el CMS descarte eventos de stock fuera de orden
+          },
+          {
+            jobId:    idempotencyKey,
+            attempts: 5,
+            backoff:  { type: 'exponential', delay: 30_000 },
+            // #115: sin esto, Redis acumula un job completado por cada webhook
+            // de Bsale para siempre — con feeds de alto volumen (stock/precio
+            // cambiando seguido) crece sin techo. Mismos valores que ya usa
+            // el scheduler para los jobs de polling.
+            removeOnComplete: { age: 86_400 },
+            removeOnFail:     { age: 604_800 },
+          },
+        );
+      }
 
       // Responder 200 inmediatamente — nunca bloquear aqui
       return reply.code(200).send();

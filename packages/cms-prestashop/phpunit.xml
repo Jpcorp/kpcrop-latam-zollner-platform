@@ -12,6 +12,16 @@
         </testsuite>
     </testsuites>
 
+    <!-- #32: tests de integracion (grupo "integration") requieren red y una
+         cuenta sandbox real de Bsale, excluidos del run normal. Se activan
+         seteando BSALE_SANDBOX_TOKEN y pasando el grupo explicito a phpunit
+         (ver README de tests/integration para el comando exacto). -->
+    <groups>
+        <exclude>
+            <group>integration</group>
+        </exclude>
+    </groups>
+
     <coverage>
         <include>
             <directory suffix=".php">synkrop/classes</directory>
