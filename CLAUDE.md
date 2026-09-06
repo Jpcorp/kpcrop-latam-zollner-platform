@@ -153,7 +153,8 @@ aplica con el `Db` de PrestaShop:
 licencia y las tiendas en bot-miki, sube el plugin, corre `migrate.php` y escribe la config de
 cada tienda. Varias tiendas con el **mismo `bsale_integration_id`** (cpnId) son deliberadas: el
 webhook de Bsale se abanica a todas (`webhooks.ts`). Los secretos van por entorno, nunca en el
-script.
+script. Cómo probarlo por fases, antes de tocar la tienda de un cliente:
+`docs/testing/manual-multi-tienda.md`.
 
 ---
 
