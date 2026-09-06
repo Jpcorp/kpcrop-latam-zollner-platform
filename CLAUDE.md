@@ -121,22 +121,40 @@ Dos motores distintos: **Postgres** (bot-miki) y **MySQL/MariaDB** (plugin Prest
   **`CREATE INDEX CONCURRENTLY` falla ahí**. El patrón del repo es `IF NOT EXISTS` en índices y
   columnas, y `DROP CONSTRAINT IF EXISTS` antes de recrear un CHECK.
 
-**MySQL — `packages/cms-prestashop/synkrop/sql/`:** 11 migraciones `migrate_*.sql` aplicadas en
-producción con `ssh/deploy_synkrop_db.sh`.
+**MySQL — `packages/cms-prestashop/synkrop/sql/`:** la vía canónica es
+**`sql/migrate.php`**, un runner único que declara las migraciones como datos y las
+aplica con el `Db` de PrestaShop:
 
-- Deben ser **idempotentes** con el patrón `information_schema` + stored procedure (plantilla:
-  `migrate_add_test_mode.sql`); un `ALTER TABLE` plano revienta en la segunda pasada.
-- Ese patrón usa `DELIMITER`, directiva del cliente `mysql` → **solo se aplican por CLI**, nunca
-  vía PDO ni `Db::getInstance()`.
-- Dos convenciones de prefijo fáciles de confundir: `install.sql` usa el literal `PREFIX_` que
-  `synkrop.php` sustituye por `_DB_PREFIX_`; los `migrate_*.sql` traen `SET @db_prefix = 'ps_'`
-  **hardcodeado** (otra tienda exige editar la migración a mano).
+    ssh <host> "cd <ps_root>/modules/synkrop/sql && php migrate.php [--dry-run]"
+
+- Toma el prefijo de **`_DB_PREFIX_`**, así que el mismo archivo sirve para cualquier tienda.
+  Para agregar una migración, añade una entrada al array `$migrations` (`column`, `index`,
+  `unique`, `dropindex` o `table`) — **no crees otro `.sql`**.
+- Es idempotente vía `SHOW COLUMNS` / `SHOW INDEX` / `SHOW TABLES`, no `information_schema`:
+  no todo usuario MySQL de hosting compartido puede leer ese catálogo, y un falso negativo
+  reintenta un `ALTER` ya aplicado. `--dry-run` no escribe nada.
+- El orden del array es el alfabético de los `.sql` originales, que es el que ya corrió en
+  producción. No lo reordenes: `variant_unique` borra un índice que otra migración creó.
+- Los 11 `migrate_*.sql` quedan como **referencia histórica**. Traen `SET @db_prefix = 'ps_'`
+  **hardcodeado** y `DELIMITER` (solo aplicables por CLI `mysql`): en una tienda con otro
+  prefijo no fallan, simplemente no hacen nada — así estuvieron 6 semanas sin aplicarse #56
+  y #130 en `strainmachine.com`, cuyo prefijo real es `pr_`. No los uses para una tienda nueva.
+- `install.sql` es aparte: usa el literal `PREFIX_` que `synkrop.php` sustituye por `_DB_PREFIX_`.
+- ⚠️ **`ssh/deploy_synkrop_db.sh` NO es un runner de migraciones**: son ~70 líneas con una sola
+  migración inline (`job_id`). Quedó obsoleto frente a `migrate.php`.
+
 - El MySQL de producción **no está en UTC**: fechas nuevas sin `DEFAULT CURRENT_TIMESTAMP`,
   escritas desde PHP con `gmdate()`.
 - `error_details` es columna **JSON** con `json_valid` en MariaDB → escribe `json_encode([])`,
   nunca `''`. El único `null` legítimo es limpiar un error previo, y exige el 5º argumento
   `$null_values=true` de `Db::update()` (`OrderDocumentService.php:138,634`) — sin él PrestaShop
   descarta el campo del UPDATE en silencio.
+
+**Alta de un cliente nuevo:** `scripts/onboard-cliente.sh <url_api_bsale>` — registra la
+licencia y las tiendas en bot-miki, sube el plugin, corre `migrate.php` y escribe la config de
+cada tienda. Varias tiendas con el **mismo `bsale_integration_id`** (cpnId) son deliberadas: el
+webhook de Bsale se abanica a todas (`webhooks.ts`). Los secretos van por entorno, nunca en el
+script.
 
 ---
 
