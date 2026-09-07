@@ -934,4 +934,71 @@ class SynkropServiceTest extends TestCase
         $this->assertNotEmpty(Product::$added);
         $this->assertEquals(2, Product::$added[0]->id_category_default, 'Sin mapeo debe caer a PS_HOME_CATEGORY');
     }
+
+    // ─── upsertVariant: stock publicado = disponible, no fisico ──────────────
+    // Una nota de venta en Bsale RESERVA stock sin mover `quantity` (sandbox:
+    // 86/8/78 -> 86/86/0). Publicar `quantity` vende lo que ya esta reservado.
+
+    private function stockInsertado($db): array
+    {
+        return array_values(array_filter(
+            $db->getCalls('insert'),
+            fn($c) => ($c['table'] ?? '') === 'stock_available'
+        ));
+    }
+
+    public function test_upsertVariant_publica_quantityAvailable_y_no_el_fisico(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['`ps_product`'] = null; // producto nuevo
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $service->syncSingle('variant', [
+            'id' => 2001, 'code' => 'SKU-STOCK-1', 'state' => 0,
+            'quantity' => 86, 'quantityAvailable' => 78,
+        ]);
+
+        $inserts = $this->stockInsertado($db);
+        $this->assertNotEmpty($inserts, 'Debe escribir stock_available');
+        $this->assertEquals(78, $inserts[0]['data']['quantity'], 'Debe publicar el disponible, no el fisico');
+        $this->assertEquals(78, $inserts[0]['data']['physical_quantity']);
+    }
+
+    public function test_upsertVariant_cae_a_quantity_si_no_viene_quantityAvailable(): void
+    {
+        // El sync bulk lee /v1/products.json, que no trae quantityAvailable.
+        $db = Db::getInstance();
+        $db->queryResults['`ps_product`'] = null;
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $service->syncSingle('variant', [
+            'id' => 2002, 'code' => 'SKU-STOCK-2', 'state' => 0, 'quantity' => 86,
+        ]);
+
+        $inserts = $this->stockInsertado($db);
+        $this->assertNotEmpty($inserts);
+        $this->assertEquals(86, $inserts[0]['data']['quantity'], 'Sin el campo debe caer a quantity, NUNCA a 0 (#101)');
+    }
+
+    public function test_upsertVariant_ignora_quantityAvailable_no_numerico(): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['`ps_product`'] = null;
+
+        $this->bsaleMock = $this->createMock(BsaleApiClient::class);
+        $service = new SynkropService($this->bsaleMock, $this->licenseMock, $this->idShop);
+
+        $service->syncSingle('variant', [
+            'id' => 2003, 'code' => 'SKU-STOCK-3', 'state' => 0,
+            'quantity' => 40, 'quantityAvailable' => null,
+        ]);
+
+        $inserts = $this->stockInsertado($db);
+        $this->assertNotEmpty($inserts);
+        $this->assertEquals(40, $inserts[0]['data']['quantity'], 'quantityAvailable no numerico no debe vaciar el stock');
+    }
 }

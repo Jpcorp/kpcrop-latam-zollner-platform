@@ -445,8 +445,8 @@ describe('processManualSync (#55: sync manual disparado desde /v1/agency/clients
 describe('processPollingCycle (#79: diff contra bsale_variant_snapshots)', () => {
   // Mismo algoritmo que computeHash() en sync-worker.ts — para poder construir
   // en el test un snapshot que "matchea" o "no matchea" a propósito.
-  const computeExpectedHash = (variant: Record<string, unknown>): string => {
-    const relevant = { code: variant['code'], cost: variant['cost'], quantity: variant['quantity'], state: variant['state'] };
+  const computeExpectedHash = (variant: Record<string, unknown>, quantityAvailable?: number): string => {
+    const relevant = { code: variant['code'], cost: variant['cost'], quantity: variant['quantity'], state: variant['state'], quantityAvailable };
     return Buffer.from(JSON.stringify(relevant)).toString('base64');
   };
 
@@ -474,8 +474,16 @@ describe('processPollingCycle (#79: diff contra bsale_variant_snapshots)', () =>
     bsalePolling = { get: mockBsaleGet } as unknown as BsaleHttpClient;
   });
 
-  function onePageResponse(products: Array<Record<string, unknown>>) {
+  // Fila de /v1/stocks.json (#133): es el UNICO lugar donde vive quantityAvailable.
+  const bsaleStockFixture = (variantId: number, quantityAvailable: number) => ({
+    id: 70000 + variantId, quantityAvailable, quantityReserved: 0,
+    variant: { id: variantId, href: `https://api.bsale.io/v1/variants/${variantId}.json` },
+  });
+
+  // El ciclo hace: N paginas de products.json y despues N paginas de stocks.json.
+  function onePageResponse(products: Array<Record<string, unknown>>, stocks: Array<Record<string, unknown>> = []) {
     mockBsaleGet.mockResolvedValueOnce({ items: products, count: products.length });
+    mockBsaleGet.mockResolvedValueOnce({ items: stocks, count: stocks.length });
   }
 
   it('pagina hasta que una página viene incompleta', async () => {
@@ -483,15 +491,17 @@ describe('processPollingCycle (#79: diff contra bsale_variant_snapshots)', () =>
     const fullPage = Array.from({ length: 50 }, (_, i) => bsaleProductFixture([bsaleVariantFixture({ id: 9000 + i })]));
     mockBsaleGet
       .mockResolvedValueOnce({ items: fullPage, count: 50 })      // pagina 1: llena -> sigue
-      .mockResolvedValueOnce({ items: [], count: 0 });            // pagina 2: vacia -> corta
+      .mockResolvedValueOnce({ items: [], count: 0 })             // pagina 2: vacia -> corta
+      .mockResolvedValueOnce({ items: [], count: 0 });            // #133: stocks.json
     mockSnapshotExecuteTakeFirst.mockResolvedValue(undefined);
     mockFetch.mockResolvedValue(okFetchResponse());
 
     await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
 
-    expect(mockBsaleGet).toHaveBeenCalledTimes(2);
-    expect(mockBsaleGet.mock.calls[0][0]).toContain('offset=0');
-    expect(mockBsaleGet.mock.calls[1][0]).toContain('offset=50');
+    const productCalls = mockBsaleGet.mock.calls.filter(c => String(c[0]).includes('/v1/products.json'));
+    expect(productCalls).toHaveLength(2);
+    expect(productCalls[0][0]).toContain('offset=0');
+    expect(productCalls[1][0]).toContain('offset=50');
   });
 
   it('variante nueva (sin snapshot previo) se despacha al CMS y se guarda el snapshot', async () => {
@@ -551,6 +561,83 @@ describe('processPollingCycle (#79: diff contra bsale_variant_snapshots)', () =>
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockInsertExecute).toHaveBeenCalledTimes(1); // solo la que sí se pudo despachar
+  });
+
+  // ── #133: stock reservado ───────────────────────────────────────────────────
+  // Bsale reserva al crear una nota de venta y `quantity` NO se mueve
+  // (sandbox: quantity=86 reserved=8 available=78 -> reserved=86 available=0).
+  // Si el hash solo mira `quantity`, el polling no detecta la reserva y las otras
+  // tiendas del mismo Bsale siguen vendiendo -> sobreventa.
+  describe('#133: cambios de stock reservado', () => {
+    it('mismo quantity pero distinto quantityAvailable => hash distinto => se despacha', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      const variant = bsaleVariantFixture({ id: 9001, quantity: 86 });
+      onePageResponse([bsaleProductFixture([variant])], [bsaleStockFixture(9001, 0)]);
+      // snapshot guardado cuando available=78: mismo quantity=86, hash del algoritmo VIEJO
+      // (sin quantityAvailable) — si se revierte el fix, este hash matchea y no hay dispatch.
+      mockSnapshotExecuteTakeFirst.mockResolvedValueOnce({ content_hash: computeExpectedHash(variant) });
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+      await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(body.bsaleData.quantity).toBe(86);          // el fisico sigue igual
+      expect(body.bsaleData.quantityAvailable).toBe(0);  // lo que el plugin va a preferir
+      expect(mockInsertExecute).toHaveBeenCalledTimes(1);
+    });
+
+    it('variante sin fila de stock: NO manda quantityAvailable y conserva el hash previo', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      const variant = bsaleVariantFixture({ id: 9002 });
+      onePageResponse([bsaleProductFixture([variant])], [bsaleStockFixture(7777, 5)]); // stock de otra variante
+      mockSnapshotExecuteTakeFirst.mockResolvedValueOnce({ content_hash: computeExpectedHash(variant) });
+
+      await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+      // sin fila de stock el hash no cambia -> no se re-despacha, y nunca se manda 0 (#101)
+      expect(mockFetch).not.toHaveBeenCalled();
+    });
+
+    it('suma las filas por sucursal y resuelve el variantId por href si falta el id', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      const variant = bsaleVariantFixture({ id: 9003 });
+      const soloHref = {
+        id: 71, quantityAvailable: 4, quantityReserved: 0,
+        variant: { href: 'https://api.bsale.io/v1/variants/9003.json' },
+      };
+      onePageResponse([bsaleProductFixture([variant])], [bsaleStockFixture(9003, 6), soloHref]);
+      mockSnapshotExecuteTakeFirst.mockResolvedValueOnce(undefined);
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+      await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body).bsaleData.quantityAvailable).toBe(10);
+    });
+
+    // Verificado contra el sandbox real: los dos endpoints tipan el id DISTINTO.
+    //   products.json?expand=[variants] -> variant.id = 9004   (number)
+    //   stocks.json                     -> variant.id = '9004' (string)
+    // Sin normalizar con Number(), el Map queda con claves string, Map.get(9004)
+    // devuelve undefined y quantityAvailable no llega nunca: el fix no hace nada,
+    // en silencio. Los fixtures de arriba usan number en ambos lados, asi que este
+    // caso solo se ve con el tipo real — por eso el test va aparte.
+    it('resuelve el variantId aunque stocks.json lo devuelva como string (tipo real de Bsale)', async () => {
+      mockSelectExecuteTakeFirstOrThrow.mockResolvedValueOnce(baseStore);
+      const variant = bsaleVariantFixture({ id: 9004, quantity: 86 });
+      const filaComoLaMandaBsale = {
+        id: 79004, quantityAvailable: 0, quantityReserved: 86,
+        variant: { id: '9004', href: 'https://api.bsale.io/v1/variants/9004.json' },
+      };
+      onePageResponse([bsaleProductFixture([variant])], [filaComoLaMandaBsale]);
+      mockSnapshotExecuteTakeFirst.mockResolvedValueOnce({ content_hash: computeExpectedHash(variant) });
+      mockFetch.mockResolvedValueOnce(okFetchResponse());
+
+      await processPollingCycle(pollJobData, bsalePolling, 'store-uuid-1');
+
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body).bsaleData.quantityAvailable).toBe(0);
+    });
   });
 
   it('lanza error si la tienda no tiene cms_url configurada', async () => {

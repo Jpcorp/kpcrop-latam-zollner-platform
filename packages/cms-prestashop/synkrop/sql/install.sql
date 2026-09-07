@@ -140,7 +140,8 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_order_queue` (
     `id_order`            INT UNSIGNED NOT NULL,
     `id_cart`             INT UNSIGNED NOT NULL DEFAULT 0,
     `status`              VARCHAR(20) NOT NULL DEFAULT 'pending',
-    -- pending | generated | emitted | closed | error | review | cancelled
+    -- pending | generated | emitted | closed | error | review | backorder | cancelled
+    -- (VARCHAR suelto, sin CHECK: agregar un estado no requiere migracion)
     `bsale_doc_id`        INT UNSIGNED DEFAULT NULL,
     `bsale_doc_number`    VARCHAR(50) DEFAULT NULL,
     `bsale_doc_url`       VARCHAR(1000) DEFAULT NULL,

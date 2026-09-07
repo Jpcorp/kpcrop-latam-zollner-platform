@@ -238,4 +238,142 @@ class OrderDocumentServiceTest extends TestCase
         );
         $this->assertNotEmpty($releaseCalls, 'Debe liberar el lock aunque no haya filas que procesar');
     }
+
+    // ─── createSaleNote: sin stock en Bsale (stk_002) sale del reintento ─────
+    // 'error' vuelve a entrar al ciclo de reintentos automatico; sin stock eso no
+    // funciona nunca (el stock no reaparece solo) -> 'backorder': fuera del reintento,
+    // pero regenerable a mano cuando repongan. NO 'review', que son pedidos que ya
+    // tienen documento en Bsale (regenerarlos duplicaria la nota de venta).
+
+    private function encolarPedidoValido(int $idOrder): void
+    {
+        $db = Db::getInstance();
+        $db->queryResults['synkrop_order_queue'] = ['id_order' => $idOrder, 'status' => 'pending'];
+        $db->queryResults['synkrop_config'] = ['bsale_office_id' => 1, 'sale_doc_type_id' => 9];
+
+        Order::$fixtures[$idOrder] = [
+            'id_customer' => 5, 'id_cart' => 9, 'id_address_invoice' => 3,
+            'products' => [[
+                'product_name'        => 'Producto X',
+                'product_reference'   => 'SKU-1',
+                'product_quantity'    => 2,
+                'unit_price_tax_excl' => 1000.0,
+            ]],
+        ];
+    }
+
+    /** Cliente Bsale que rechaza el POST con el body real de la API */
+    private function bsaleQueRechaza(string $body): BsaleApiClient
+    {
+        return new class ('token-test', $body) extends BsaleApiClient {
+            private $body;
+            public function __construct(string $token, string $body)
+            {
+                parent::__construct($token);
+                $this->body = $body;
+            }
+            public function post(string $path, array $data): array
+            {
+                throw new BsaleApiException(400, $this->body);
+            }
+        };
+    }
+
+    public function testCreateSaleNoteSinStockQuedaEnBackorderYNoEnError(): void
+    {
+        $this->encolarPedidoValido(77);
+        $bsale = $this->bsaleQueRechaza(
+            '{"error":"There is no stock for this products: SKU-1","errorCode":"stk_002"}'
+        );
+
+        $result = (new OrderDocumentService($bsale, 1))->createSaleNote(77);
+
+        $this->assertFalse($result['ok']);
+        $updates = Db::getInstance()->getCalls('update');
+        $this->assertNotEmpty($updates);
+        $this->assertSame(
+            OrderDocumentService::STATUS_BACKORDER,
+            $updates[0]['data']['status'],
+            'Sin stock no se reintenta solo: debe quedar en backorder, no en error'
+        );
+
+        // error_details siempre JSON valido (MariaDB CHECK json_valid) y en español
+        $decoded = json_decode(stripslashes($updates[0]['data']['error_details']), true);
+        $this->assertIsArray($decoded);
+        $this->assertStringContainsString('stock', strtolower($decoded['message']));
+    }
+
+    public function testCreateSaleNoteOtroErrorDeBsaleSigueEnErrorParaReintentar(): void
+    {
+        $this->encolarPedidoValido(78);
+        $bsale = $this->bsaleQueRechaza('{"error":"Client is required","errorCode":"cli_001"}');
+
+        $result = (new OrderDocumentService($bsale, 1))->createSaleNote(78);
+
+        $this->assertFalse($result['ok']);
+        $updates = Db::getInstance()->getCalls('update');
+        $this->assertSame(
+            OrderDocumentService::STATUS_ERROR,
+            $updates[0]['data']['status'],
+            'Un error reintentable debe seguir en error'
+        );
+    }
+
+    public function testBsaleApiExceptionExponeElErrorCode(): void
+    {
+        // El body se trunca a 500 chars para el log: el errorCode se extrae antes.
+        $relleno = str_repeat('x', 600);
+        $e = new BsaleApiException(400, '{"error":"' . $relleno . '","errorCode":"stk_002"}');
+
+        $this->assertSame('stk_002', $e->getErrorCode());
+        $this->assertSame('', (new BsaleApiException(500, 'Internal Server Error'))->getErrorCode());
+    }
+
+    public function testCreateSaleNoteRegeneraUnBackorderCuandoReponenStock(): void
+    {
+        // El pedido quedo en backorder; el operador repone stock en Bsale y aprieta
+        // "Generar". Antes esto era imposible: createSaleNote() salia temprano.
+        $this->encolarPedidoValido(79);
+        Db::getInstance()->queryResults['synkrop_order_queue'] = ['id_order' => 79, 'status' => 'backorder'];
+
+        $bsale = new class ('token-test') extends BsaleApiClient {
+            public function post(string $path, array $data): array
+            {
+                return ['id' => 5001, 'number' => 123, 'totalAmount' => 2380];
+            }
+            public function get(string $path, array $params = []): array
+            {
+                return ['items' => [['variant' => ['code' => 'SKU-1']]]];
+            }
+        };
+
+        $result = (new OrderDocumentService($bsale, 1))->createSaleNote(79);
+
+        $this->assertTrue($result['ok'], $result['message']);
+        $updates = Db::getInstance()->getCalls('update');
+        $this->assertNotEmpty($updates, 'Debe generar la nota, no salir temprano');
+        $this->assertSame(OrderDocumentService::STATUS_GENERATED, $updates[0]['data']['status']);
+        $this->assertSame(5001, $updates[0]['data']['bsale_doc_id']);
+    }
+
+    public function testCreateSaleNoteNoRegeneraUnReviewParaNoDuplicarDocumento(): void
+    {
+        // 'review' = ya hay documento en Bsale (anulacion fallida / cancelado con boleta
+        // emitida). Regenerarlo crearia una nota de venta duplicada.
+        $this->encolarPedidoValido(80);
+        Db::getInstance()->queryResults['synkrop_order_queue'] = ['id_order' => 80, 'status' => 'review'];
+
+        $bsale = new class ('token-test') extends BsaleApiClient {
+            public function post(string $path, array $data): array
+            {
+                throw new LogicException('No debe llamarse a Bsale para un pedido en review');
+            }
+        };
+
+        $result = (new OrderDocumentService($bsale, 1))->createSaleNote(80);
+
+        $this->assertTrue($result['ok']);
+        $this->assertStringContainsString('ya procesado', $result['message']);
+        $this->assertEmpty(Db::getInstance()->getCalls('update'), 'No debe tocar la fila');
+    }
 }

@@ -175,13 +175,26 @@ class BsaleApiException extends RuntimeException
     // para debug sin acumular payloads completos en el log.
     private const MAX_BODY_LENGTH = 500;
 
+    /** errorCode de Bsale (ej. 'stk_002' = sin stock), '' si la respuesta no lo trae */
+    private $errorCode = '';
+
     public function __construct(int $httpCode, string $body)
     {
+        // El errorCode se extrae ANTES de truncar: el caller lo necesita para distinguir
+        // un rechazo definitivo de negocio (sin stock) de un error reintentable, y un body
+        // largo puede empujarlo mas alla de MAX_BODY_LENGTH.
+        $decoded = json_decode($body, true);
+        if (is_array($decoded) && isset($decoded['errorCode'])) {
+            $this->errorCode = (string)$decoded['errorCode'];
+        }
+
         if (strlen($body) > self::MAX_BODY_LENGTH) {
             $body = substr($body, 0, self::MAX_BODY_LENGTH) . '... (truncado)';
         }
         parent::__construct("Bsale API {$httpCode}: {$body}", $httpCode);
     }
+
+    public function getErrorCode(): string { return $this->errorCode; }
 
     public function isClientError(): bool { return $this->getCode() >= 400 && $this->getCode() < 500; }
     public function isServerError(): bool { return $this->getCode() >= 500; }

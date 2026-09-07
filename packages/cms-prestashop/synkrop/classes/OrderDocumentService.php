@@ -34,6 +34,14 @@ class OrderDocumentService
     const STATUS_CLOSED    = 'closed';
     const STATUS_ERROR     = 'error';
     const STATUS_REVIEW    = 'review';
+    /**
+     * Bsale rechazo la nota de venta por falta de stock (errorCode stk_002).
+     * Estado propio y NO 'review': 'review' son pedidos que YA tienen documento en Bsale
+     * (anulacion fallida, cancelado con boleta emitida) — meterlos al flujo de generacion
+     * crearia una nota de venta duplicada. Un 'backorder', en cambio, no tiene documento:
+     * cuando reponen stock hay que poder regenerarlo, pero solo a mano (no se reintenta solo).
+     */
+    const STATUS_BACKORDER = 'backorder';
     const STATUS_CANCELLED = 'cancelled';
 
     /** RUT genérico de consumidor final (SII Chile) para compradores sin RUT válido */
@@ -94,8 +102,9 @@ class OrderDocumentService
             $row = $this->getQueueRow($idOrder);
         }
 
-        // Idempotencia: solo se genera desde pending o reintentando un error
-        if (!in_array($row['status'], [self::STATUS_PENDING, self::STATUS_ERROR], true)) {
+        // Idempotencia: solo se genera desde pending, reintentando un error, o
+        // regenerando a mano un backorder (sin stock) una vez repuesto en Bsale.
+        if (!in_array($row['status'], [self::STATUS_PENDING, self::STATUS_ERROR, self::STATUS_BACKORDER], true)) {
             return ['ok' => true, 'message' => 'Pedido ' . $idOrder . ' ya procesado (status: ' . $row['status'] . ')'];
         }
 
@@ -140,12 +149,27 @@ class OrderDocumentService
 
             return ['ok' => true, 'message' => 'Nota de venta N°' . ($resp['number'] ?? '?') . ' creada para pedido ' . $idOrder];
         } catch (Exception $e) {
+            // Bsale rechaza la nota de venta por falta de stock (errorCode stk_002).
+            // Reintentar automaticamente no sirve: el stock no reaparece solo, y 'error'
+            // SI entra en el ciclo de reintentos (ver el in_array de arriba) — el pedido se
+            // reintentaria para siempre. Queda en 'backorder': fuera del reintento
+            // automatico, pero regenerable a mano desde el panel cuando repongan stock.
+            $sinStock = ($e instanceof BsaleApiException) && $e->getErrorCode() === 'stk_002';
+
             $this->updateRow($idOrder, [
-                'status'        => self::STATUS_ERROR,
+                'status'        => $sinStock ? self::STATUS_BACKORDER : self::STATUS_ERROR,
                 // JSON válido siempre — MariaDB con CHECK json_valid rechaza '' (lección prod)
-                'error_details' => pSQL(json_encode(['message' => $e->getMessage()])),
+                'error_details' => pSQL(json_encode($sinStock
+                    ? [
+                        'message' => 'Bsale rechazó la nota de venta porque el producto quedó sin stock disponible. '
+                            . 'El pedido NO se reintenta solo: contacta al cliente (reponer stock, cambiar el '
+                            . 'producto o reembolsar) y usa el botón "Generar" de este pedido cuando esté resuelto.',
+                        'api'     => $e->getMessage(),
+                    ]
+                    : ['message' => $e->getMessage()])),
             ]);
-            return ['ok' => false, 'message' => 'Error en pedido ' . $idOrder . ': ' . $e->getMessage()];
+            $prefijo = $sinStock ? 'Sin stock en Bsale — pedido ' : 'Error en pedido ';
+            return ['ok' => false, 'message' => $prefijo . $idOrder . ': ' . $e->getMessage()];
         }
     }
 

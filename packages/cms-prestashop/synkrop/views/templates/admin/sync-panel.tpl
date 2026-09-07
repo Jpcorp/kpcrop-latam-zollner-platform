@@ -358,6 +358,9 @@
             {if isset($order_counts.error)}
               <span class="label label-danger">{$order_counts.error} {l s='con error' mod='synkrop'}</span>
             {/if}
+            {if isset($order_counts.backorder)}
+              <span class="label label-warning">{$order_counts.backorder} {l s='sin stock' mod='synkrop'}</span>
+            {/if}
             {if isset($order_counts.review)}
               <span class="label label-warning">{$order_counts.review} {l s='por revisar' mod='synkrop'}</span>
             {/if}
@@ -431,6 +434,10 @@
                       <span class="label label-danger" {if $row.error_message}title="{$row.error_message|escape:'html'}"{/if}>
                         {l s='Error' mod='synkrop'}
                       </span>
+                    {elseif $row.status == 'backorder'}
+                      <span class="label label-warning" {if $row.error_message}title="{$row.error_message|escape:'html'}"{/if}>
+                        {l s='Sin stock' mod='synkrop'}
+                      </span>
                     {elseif $row.status == 'review'}
                       <span class="label label-warning" {if $row.error_message}title="{$row.error_message|escape:'html'}"{/if}>
                         {l s='Revisar' mod='synkrop'}
@@ -466,7 +473,7 @@
                     {/if}
                   </td>
                   <td class="text-right">
-                    {if $row.status == 'pending' || $row.status == 'error'}
+                    {if $row.status == 'pending' || $row.status == 'error' || $row.status == 'backorder'}
                       <button class="btn btn-xs btn-default bs-order-generate" data-order="{$row.id_order}">
                         <i class="icon-file-text"></i>&nbsp;{l s='Generar' mod='synkrop'}
                       </button>
