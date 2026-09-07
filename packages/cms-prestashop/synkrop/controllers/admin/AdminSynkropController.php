@@ -117,6 +117,11 @@ class AdminSynkropController extends ModuleAdminController
             'agency_name'           => $config['agency_name'] ?? '',
             'agency_logo_url'       => $config['agency_logo_url'] ?? '',
             'agency_brand_color'    => $config['agency_brand_color'] ?? '',
+            // Plan de la licencia. Lo persiste LicenseClient al refrescar el JWT,
+            // asi que el panel lo muestra aunque bot-miki este caido.
+            'license_plan'          => $config['license_plan'] ?? '',
+            'license_max_stores'    => (int)($config['license_max_stores'] ?? 0),
+            'license_features'      => $this->parseFeatures($config['license_features'] ?? ''),
         ]);
 
         $this->content = $this->context->smarty->fetch(
@@ -210,6 +215,23 @@ class AdminSynkropController extends ModuleAdminController
                 'message' => 'Token invalido o sin permisos (HTTP ' . $e->getCode() . ')',
             ]));
         }
+    }
+
+    /**
+     * Features de la licencia, guardadas como JSON por LicenseClient.
+     * Devuelve array vacio si el campo esta vacio o no es JSON valido: el panel
+     * simplemente no lista features, nunca rompe por esto.
+     *
+     * @return string[]
+     */
+    private function parseFeatures(string $json): array
+    {
+        if ($json === '') {
+            return [];
+        }
+        $decoded = json_decode($json, true);
+
+        return is_array($decoded) ? array_map('strval', $decoded) : [];
     }
 
     // ─── AJAX: Verificar licencia ─────────────────────────────────────────────

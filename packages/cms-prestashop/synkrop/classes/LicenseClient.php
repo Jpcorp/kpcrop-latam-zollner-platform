@@ -133,6 +133,12 @@ class LicenseClient
                 'agency_name'         => isset($data['agencyName']) ? pSQL((string)$data['agencyName']) : null,
                 'agency_logo_url'     => isset($data['agencyLogoUrl']) ? pSQL((string)$data['agencyLogoUrl']) : null,
                 'agency_brand_color'  => isset($data['agencyBrandColor']) ? pSQL((string)$data['agencyBrandColor']) : null,
+                // Plan vigente, para mostrarlo en el panel sin volver a llamar al
+                // daemon. Se refresca con el mismo ciclo del JWT; si bot-miki cae,
+                // el panel sigue mostrando el ultimo plan conocido.
+                'license_plan'        => isset($data['plan']) ? pSQL((string)$data['plan']) : null,
+                'license_max_stores'  => isset($data['maxStores']) ? (int)$data['maxStores'] : null,
+                'license_features'    => isset($data['features']) ? pSQL(json_encode($data['features'])) : null,
             ],
             'id_shop = ' . (int)Context::getContext()->shop->id,
             0,
