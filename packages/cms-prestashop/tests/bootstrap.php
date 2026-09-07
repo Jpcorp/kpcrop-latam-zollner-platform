@@ -244,8 +244,14 @@ class Order
     public $id;
     public $id_customer = 0;
     public $id_lang = 1;
+    // Campos que usa buildPayload()/buildClient() para armar la nota de venta
+    public $id_cart = 0;
+    public $id_address_invoice = 0;
+    public $total_discounts_tax_incl = 0.0;
+    public $total_shipping_tax_excl = 0.0;
+    public array $products = [];
 
-    /** @var array<int, array{id_customer?:int, id_lang?:int}> configurar antes de instanciar */
+    /** @var array<int, array{id_customer?:int, id_lang?:int, products?:array}> configurar antes de instanciar */
     public static array $fixtures = [];
 
     public function __construct(int $id = 0)
@@ -253,12 +259,23 @@ class Order
         // Sin fixture registrada = el pedido no existe (Order no cargado) —
         // simetrico a PrestaShop real (Order($id) con $id inexistente en BD).
         if ($id && isset(self::$fixtures[$id])) {
+            $f = self::$fixtures[$id];
             $this->id           = $id;
-            $this->id_customer  = self::$fixtures[$id]['id_customer'] ?? 999;
-            $this->id_lang      = self::$fixtures[$id]['id_lang'] ?? 1;
+            $this->id_customer  = $f['id_customer'] ?? 999;
+            $this->id_lang      = $f['id_lang'] ?? 1;
+            $this->id_cart      = $f['id_cart'] ?? 0;
+            $this->id_address_invoice      = $f['id_address_invoice'] ?? 0;
+            $this->total_discounts_tax_incl = $f['total_discounts_tax_incl'] ?? 0.0;
+            $this->total_shipping_tax_excl  = $f['total_shipping_tax_excl'] ?? 0.0;
+            $this->products     = $f['products'] ?? [];
         } else {
             $this->id = null;
         }
+    }
+
+    public function getProducts(): array
+    {
+        return $this->products;
     }
 
     public static function reset(): void
@@ -291,6 +308,21 @@ class Customer
     public static function reset(): void
     {
         self::$fixtures = [];
+    }
+}
+
+// Direccion de facturacion (buildClient() la usa para RUT/direccion del cliente Bsale)
+class Address
+{
+    public $id;
+    public $dni = '';
+    public $address1 = '';
+    public $address2 = '';
+    public $city = '';
+
+    public function __construct(int $id = 0)
+    {
+        $this->id = $id ?: null;
     }
 }
 

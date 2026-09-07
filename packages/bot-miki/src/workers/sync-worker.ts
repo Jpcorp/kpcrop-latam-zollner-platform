@@ -301,6 +301,15 @@ export async function processPollingCycle(
     offset += pageSize;
   } while (page.items.length === pageSize);
 
+  // #133: `variant.quantity` (lo unico que trae products.json) es el stock FISICO y
+  // NO se mueve cuando Bsale reserva por una nota de venta
+  // (medido en sandbox: quantity=86 reserved=8 available=78 -> reserved=86 available=0,
+  // quantity intacto). Sin esto el hash no cambia, el polling no detecta nada y las
+  // otras tiendas del mismo Bsale siguen ofreciendo stock ya reservado (sobreventa).
+  // quantityAvailable solo vive en /v1/stocks.json -> una pasada paginada, no una
+  // llamada por variante.
+  const availableByVariant = await fetchAvailableStock(bsale, pageSize);
+
   let changed = 0;
   let dispatched = 0;
   let failed = 0;
@@ -310,7 +319,8 @@ export async function processPollingCycle(
 
     for (const variant of variants) {
       const variantId = variant['id'] as number;
-      const hash = computeHash(variant);
+      const quantityAvailable = availableByVariant.get(variantId);
+      const hash = computeHash(variant, quantityAvailable);
 
       const snapshot = await db
         .selectFrom('bsale_variant_snapshots')
@@ -330,7 +340,13 @@ export async function processPollingCycle(
         // cae al fallback de description/code, ver SynkropService.php).
         await dispatchToCms(store.cms_url, store.cms_webhook_secret, jobId, {
           topic:     'variant',
-          bsaleData: { ...variant, product },
+          // #133: el plugin prefiere quantityAvailable sobre quantity cuando esta
+          // presente y es numerico. Si la variante no tiene fila de stock se omite a
+          // proposito (undefined, no 0) para que el plugin caiga a su comportamiento
+          // actual — mandar 0 vaciaria el stock de la tienda (mismo error que #101).
+          bsaleData: quantityAvailable === undefined
+            ? { ...variant, product }
+            : { ...variant, product, quantityAvailable },
         });
         dispatched++;
 
@@ -352,12 +368,59 @@ export async function processPollingCycle(
   console.log(`[polling] jobId=${jobId ?? '-'} store=${storeId} changed=${changed} dispatched=${dispatched} failed=${failed} total=${products.length}`);
 }
 
-function computeHash(variant: Record<string, unknown>): string {
+/**
+ * #133: descarga TODAS las filas de /v1/stocks.json (paginado, misma condicion de
+ * corte que el bucle de productos) y devuelve variantId -> quantityAvailable.
+ * Bsale reporta una fila por sucursal: se suman, porque `variant.quantity` —
+ * el valor que el polling usaba hasta ahora — tambien es el total del catalogo.
+ * Una fila sin quantityAvailable numerico se ignora (#101: no asumir 0).
+ */
+async function fetchAvailableStock(
+  bsale: BsaleHttpClient,
+  pageSize: number,
+): Promise<Map<number, number>> {
+  const byVariant = new Map<number, number>();
+  let offset = 0;
+  let page: { items: unknown[] };
+  do {
+    page = await bsale.get<{ items: unknown[] }>(`/v1/stocks.json?limit=${pageSize}&offset=${offset}`);
+    for (const row of page.items as Array<Record<string, unknown>>) {
+      const qty = row['quantityAvailable'];
+      if (typeof qty !== 'number') continue;
+      // #133: Number() NO es cosmetico. Los dos endpoints tipan el id distinto —
+      // verificado contra el sandbox: products.json?expand=[variants] devuelve
+      // variant.id = 1 (number) y stocks.json devuelve variant.id = '1' (string).
+      // Sin normalizar, el Map se llena con claves string y processPollingCycle lo
+      // consulta con number: Map.get(1) nunca encuentra '1', quantityAvailable
+      // queda undefined siempre y el fix no hace nada — sin fallar, en silencio.
+      // mismo fallback variant.href que el resolver de webhooks (#98)
+      const variant = row['variant'] as { id?: number | string; href?: string } | undefined;
+      const variantId = Number(
+        variant?.id
+        ?? parseInt(String(variant?.href ?? '').match(/\/(\d+)\.json/)?.[1] ?? '0', 10),
+      );
+      if (!Number.isFinite(variantId) || variantId === 0) continue;
+      byVariant.set(variantId, (byVariant.get(variantId) ?? 0) + qty);
+    }
+    offset += pageSize;
+  } while (page.items.length === pageSize);
+  return byVariant;
+}
+
+/**
+ * #133: quantityAvailable entra al hash. Ojo con el deploy: el hash de toda variante
+ * CON fila de stock cambia, asi que el primer ciclo de polling posterior re-despacha
+ * el catalogo completo una vez. Es esperado y se auto-estabiliza en el segundo ciclo.
+ * Las variantes sin fila de stock conservan su hash actual (JSON.stringify omite
+ * `undefined`), asi que esas no se re-despachan.
+ */
+function computeHash(variant: Record<string, unknown>, quantityAvailable?: number): string {
   const relevant = {
     code: variant['code'],
     cost: variant['cost'],
     quantity: variant['quantity'],
     state: variant['state'],
+    quantityAvailable,
   };
   // Hash simple sin dependencias — suficiente para comparacion
   return Buffer.from(JSON.stringify(relevant)).toString('base64');

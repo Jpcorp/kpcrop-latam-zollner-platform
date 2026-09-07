@@ -570,8 +570,18 @@ class SynkropService
                 throw new RuntimeException('No se pudo guardar producto: ' . $code);
             }
 
-            // Actualizar stock directamente en DB para evitar disparar hooks de ps_emailalerts
-            $this->setStockDirect($psProduct->id, (int)($variant['quantity'] ?? 0));
+            // Actualizar stock directamente en DB para evitar disparar hooks de ps_emailalerts.
+            // Se publica el DISPONIBLE (quantityAvailable), no el fisico (quantity): una nota
+            // de venta en Bsale RESERVA stock sin mover quantity (medido en sandbox: 86/8/78
+            // -> 86/86/0), asi que quantity publica como vendible lo que ya esta reservado.
+            // Misma regla que el webhook de stock y syncStock().
+            // El campo no siempre viene (el sync bulk lee /v1/products.json, que no lo trae):
+            // en ese caso se cae a quantity y NUNCA a 0 — poner 0 por un campo ausente vacia
+            // el stock de la tienda (#101).
+            $available = (array_key_exists('quantityAvailable', $variant) && is_numeric($variant['quantityAvailable']))
+                ? $variant['quantityAvailable']
+                : ($variant['quantity'] ?? 0);
+            $this->setStockDirect($psProduct->id, (int)$available);
 
             // Registrar mapeo Bsale ↔ PrestaShop para syncs futuros
             $this->saveProductMap($psProduct->id, $variant);

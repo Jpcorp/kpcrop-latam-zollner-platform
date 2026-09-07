@@ -336,11 +336,15 @@ class AdminSynkropController extends ModuleAdminController
         if ($idOrder > 0) {
             $targets = [$idOrder];
         } else {
-            // Lote: todos los pendientes (y reintentos de error) de la tienda
+            // Lote: todos los pendientes (y reintentos de error) de la tienda.
+            // Incluye 'backorder' (rechazado por falta de stock): este boton lo dispara
+            // una persona, que es justo la decision que ese estado necesita. El lote
+            // automatico de ajaxProcessAuthorizeOrders() NO los incluye a proposito.
             $rows = Db::getInstance()->executeS(
                 'SELECT id_order FROM `' . _DB_PREFIX_ . 'synkrop_order_queue`
                  WHERE id_shop = ' . (int)$this->context->shop->id . "
-                 AND status IN ('" . OrderDocumentService::STATUS_PENDING . "','" . OrderDocumentService::STATUS_ERROR . "')
+                 AND status IN ('" . OrderDocumentService::STATUS_PENDING . "','" . OrderDocumentService::STATUS_ERROR
+                . "','" . OrderDocumentService::STATUS_BACKORDER . "')
                  ORDER BY id ASC LIMIT 50"
             ) ?: [];
             $targets = array_map(function ($r) { return (int)$r['id_order']; }, $rows);
@@ -424,6 +428,10 @@ class AdminSynkropController extends ModuleAdminController
             $this->ajaxDie(json_encode(['success' => false, 'message' => $e->getMessage()]));
         }
 
+        // 'backorder' queda FUERA a proposito (a diferencia del lote manual de
+        // ajaxProcessGenerateOrderDoc): un pedido sin stock en Bsale volveria a fallar en
+        // cada autorizacion hasta que alguien reponga stock. Se regenera uno por uno con el
+        // boton "Generar" del pedido, cuando la persona sabe que el stock ya esta.
         $rows = Db::getInstance()->executeS(
             'SELECT id_order FROM `' . _DB_PREFIX_ . 'synkrop_order_queue`
              WHERE id_shop = ' . (int)$this->context->shop->id . "
