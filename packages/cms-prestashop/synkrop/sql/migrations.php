@@ -106,4 +106,11 @@ return array(
 
     // migrate_add_order_auto_mode (#130)
     array('column', 'synkrop_config', 'order_auto_mode', 'TINYINT(1) NOT NULL DEFAULT 0'),
+
+    // Plan de la licencia, para mostrarlo en el panel. bot-miki ya lo devuelve en
+    // /v1/license/token junto al JWT; se persiste con el mismo refresco que el
+    // branding de agencia (#56) para no depender de que el daemon responda.
+    array('column', 'synkrop_config', 'license_plan', 'VARCHAR(20) DEFAULT NULL'),
+    array('column', 'synkrop_config', 'license_max_stores', 'INT UNSIGNED DEFAULT NULL'),
+    array('column', 'synkrop_config', 'license_features', 'TEXT'),
 );

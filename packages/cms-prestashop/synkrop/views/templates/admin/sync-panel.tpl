@@ -118,6 +118,51 @@
 
   {* ── SYNC MANUAL ────────────────────────────────────────────────────── *}
 
+  {* ── PLAN CONTRATADO ────────────────────────────────────────────────── *}
+  {if $license_plan}
+  <div class="panel panel-default" style="margin-bottom:14px">
+    <div class="panel-heading">
+      <i class="icon-certificate"></i>&nbsp;{l s='Tu plan' mod='synkrop'}
+    </div>
+    <div class="panel-body" style="display:flex;flex-wrap:wrap;gap:22px;align-items:center">
+
+      <div>
+        <div class="text-muted small">{l s='Plan contratado' mod='synkrop'}</div>
+        <div style="font-size:18px;font-weight:600;text-transform:capitalize">
+          {$license_plan|escape:'html':'UTF-8'}
+        </div>
+      </div>
+
+      {if $license_max_stores > 0}
+      <div>
+        <div class="text-muted small">{l s='Tiendas incluidas' mod='synkrop'}</div>
+        <div style="font-size:18px;font-weight:600">
+          {$license_max_stores|intval}
+          <span class="text-muted" style="font-size:13px;font-weight:400">
+            {if $license_max_stores == 1}{l s='tienda' mod='synkrop'}{else}{l s='tiendas' mod='synkrop'}{/if}
+          </span>
+        </div>
+      </div>
+      {/if}
+
+      {if $license_features}
+      <div style="flex:1;min-width:220px">
+        <div class="text-muted small" style="margin-bottom:4px">{l s='Incluye' mod='synkrop'}</div>
+        {foreach $license_features as $feature}
+          <span class="label label-info" style="margin-right:4px;display:inline-block;margin-bottom:3px">
+            {$feature|replace:'_':' '|escape:'html':'UTF-8'}
+          </span>
+        {/foreach}
+      </div>
+      {/if}
+
+    </div>
+    <div class="panel-footer text-muted small">
+      {l s='Para cambiar de plan o sumar tiendas, contacta a tu proveedor.' mod='synkrop'}
+    </div>
+  </div>
+  {/if}
+
   <div class="row" id="synkrop-panel"
        {if !$is_configured}style="opacity:0.5;pointer-events:none;user-select:none"{/if}>
 
@@ -952,10 +997,10 @@
     });
   }
 
-  var checkBtn = document.getElementById('bs-orders-check-emissions');
-  if (checkBtn) {
-    checkBtn.addEventListener('click', function () {
-      ordersAction('CheckEmissions', {}, checkBtn, 'Consultando emisiones en Bsale...');
+  var emissionsBtn = document.getElementById('bs-orders-check-emissions');
+  if (emissionsBtn) {
+    emissionsBtn.addEventListener('click', function () {
+      ordersAction('CheckEmissions', {}, emissionsBtn, 'Consultando emisiones en Bsale...');
     });
   }
 
