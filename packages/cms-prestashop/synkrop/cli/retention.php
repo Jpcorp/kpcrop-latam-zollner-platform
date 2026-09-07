@@ -27,7 +27,12 @@ if (!file_exists(_PS_ROOT_DIR_ . '/config/config.inc.php')) {
 }
 
 require_once _PS_ROOT_DIR_ . '/config/config.inc.php';
-require_once _PS_ROOT_DIR_ . '/init.php';
+// NO cargar init.php: instancia un FrontController y llama a init(), que en
+// contexto CLI puede terminar el proceso con Tools::redirect() (header + exit).
+// Se manifiesta como exit 0 SIN NINGUNA salida — los 3 CLI de este modulo
+// estuvieron rotos asi en strainmachine.com, fallando en silencio.
+// Verificado 07-sep-2026: config.inc.php basta. Ninguno de estos scripts usa
+// Context, Shop, Employee ni Tools, y SynkropService tampoco.
 require_once _PS_MODULE_DIR_ . 'synkrop/classes/SynkropService.php';
 
 // ── Parseo de argumentos ──────────────────────────────────────────────────────
