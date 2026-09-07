@@ -154,6 +154,7 @@ Railway reinicia automaticamente si el health check falla 3 veces consecutivas
 
 | Guia | Descripcion |
 |------|-------------|
+| [implementacion-3-tiendas.md](./implementacion-3-tiendas.md) | Plan de alta de las 3 tiendas del cliente (allgrano/semillasdecanamo/strainmachine) |
 | [plugin-install.md](./plugin-install.md) | Instalacion del modulo en PrestaShop |
 | [sync-manual.md](./sync-manual.md) | Sincronizacion manual de productos, stock y precios |
 | [webhook-auto-sync.md](./webhook-auto-sync.md) | Configuracion de sincronizacion automatica via webhooks |
