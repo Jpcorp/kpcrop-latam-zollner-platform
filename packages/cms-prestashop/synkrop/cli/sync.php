@@ -11,8 +11,13 @@
  *
  * Opciones:
  *   --shop=1           ID de tienda (default: 1)
- *   --dry-run          Solo muestra lo que haría, sin modificar datos
+ *   --dry-run          Valida config y sale sin sincronizar ni validar licencia.
+ *                      NO enumera los cambios: solo comprueba que el CLI arranca.
  *   --verbose          Imprime progreso detallado
+ *
+ * Las opciones van ANTES de la entidad (getopt corta en el primer positional):
+ *   OK    php .../sync.php --shop=2 stock
+ *   ERROR php .../sync.php stock --shop=2
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -22,6 +27,37 @@ if (PHP_SAPI !== 'cli') {
 
 set_time_limit(0);
 ini_set('memory_limit', '512M');
+
+// ── Parseo de argumentos ──────────────────────────────────────────────────────
+// Va antes del bootstrap: no necesita PrestaShop y asi un error de sintaxis se
+// reporta al toque, sin cargar medio framework.
+
+$opts = getopt('', ['shop:', 'dry-run', 'verbose'], $restIndex);
+$positional = array_slice($argv, $restIndex);
+
+// getopt corta en el primer positional: todo lo que venga despues lo ignora en
+// SILENCIO. `sync.php stock --shop=2` sincronizaba la tienda 1 y dejaba la fila
+// de log con id_shop=1, asi que desde el panel no se notaba nada raro.
+foreach ($positional as $arg) {
+    if (strpos($arg, '--') === 0) {
+        fwrite(STDERR, "[ERROR] La opción '$arg' va antes de la entidad: sync.php $arg <entidad>\n");
+        exit(1);
+    }
+}
+
+$entity  = $positional[0] ?? 'products';
+$idShop  = (int)($opts['shop'] ?? 1);
+$dryRun  = isset($opts['dry-run']);
+$verbose = isset($opts['verbose']);
+
+$validEntities = ['products', 'stock', 'prices', 'all'];
+if (!in_array($entity, $validEntities)) {
+    fwrite(STDERR, "[ERROR] Entidad inválida: '$entity'. Usa: " . implode(' | ', $validEntities) . "\n");
+    exit(1);
+}
+
+// Correlaciona en synkrop_log las N filas de una misma corrida (`all` escribe 3).
+$jobId = 'cli_' . $idShop . '_' . $entity . '_' . time();
 
 // ── Bootstrap de PrestaShop ───────────────────────────────────────────────────
 
@@ -44,33 +80,18 @@ require_once _PS_MODULE_DIR_ . 'synkrop/classes/BsaleApiClient.php';
 require_once _PS_MODULE_DIR_ . 'synkrop/classes/LicenseClient.php';
 require_once _PS_MODULE_DIR_ . 'synkrop/classes/SynkropService.php';
 
-// ── Parseo de argumentos ──────────────────────────────────────────────────────
-
-$opts = getopt('', ['shop:', 'dry-run', 'verbose'], $restIndex);
-$positional = array_slice($argv, $restIndex);
-$entity  = $positional[0] ?? 'products';
-$idShop  = (int)($opts['shop'] ?? 1);
-$dryRun  = isset($opts['dry-run']);
-$verbose = isset($opts['verbose']);
-
-$validEntities = ['products', 'stock', 'prices', 'all'];
-if (!in_array($entity, $validEntities)) {
-    fwrite(STDERR, "[ERROR] Entidad inválida: '$entity'. Usa: " . implode(' | ', $validEntities) . "\n");
-    exit(1);
-}
-
 // ── Logging helpers ───────────────────────────────────────────────────────────
 
 function logInfo(string $msg, bool $verbose = false, bool $force = false): void
 {
     if ($force || $verbose) {
-        echo "[INFO]  " . date('H:i:s') . " $msg\n";
+        echo "[INFO]  " . gmdate('H:i:s') . " $msg\n";
     }
 }
 
 function logError(string $msg): void
 {
-    fwrite(STDERR, "[ERROR] " . date('H:i:s') . " $msg\n");
+    fwrite(STDERR, "[ERROR] " . gmdate('H:i:s') . " $msg\n");
 }
 
 function logResult(string $entity, SyncResult $result): void
@@ -109,7 +130,9 @@ if ($dryRun) {
     echo "[DRY-RUN] No se modificarán datos.\n";
 }
 
-echo "=== synkrop CLI | tienda #$idShop | " . date('Y-m-d H:i:s') . " ===\n\n";
+// UTC, igual que created_at en synkrop_log: el servidor esta en UTC-5 y con
+// hora local la salida del cron no cuadraba con lo que muestra el panel.
+echo "=== synkrop CLI | tienda #$idShop | job $jobId | " . gmdate('Y-m-d H:i:s') . " UTC ===\n\n";
 
 // ── Construir servicio ────────────────────────────────────────────────────────
 
@@ -150,6 +173,7 @@ foreach ($entities as $ent) {
         Db::getInstance()->insert('synkrop_log', [
             'id_shop'       => $idShop,
             'sync_type'     => pSQL('cli'),
+            'job_id'        => pSQL($jobId),
             'entity_type'   => pSQL($ent),
             'status'        => pSQL($result->status()),
             'records_ok'    => $result->updated,
@@ -169,5 +193,5 @@ foreach ($entities as $ent) {
     }
 }
 
-echo "\n=== Completado (" . date('H:i:s') . ") ===\n";
+echo "\n=== Completado (" . gmdate('H:i:s') . " UTC) ===\n";
 exit($exitCode);

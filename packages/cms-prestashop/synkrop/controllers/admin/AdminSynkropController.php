@@ -531,6 +531,9 @@ class AdminSynkropController extends ModuleAdminController
         Db::getInstance()->insert('synkrop_log', [
             'id_shop'      => (int)$this->context->shop->id,
             'sync_type'    => pSQL($type),
+            // Sin job_id la fila no se correlaciona con nada: webhook.php ya lo
+            // escribe en sus 5 inserciones y synkrop_log tiene indice por esa columna.
+            'job_id'       => pSQL($type . '_' . (int)$this->context->shop->id . '_' . $entity . '_' . time()),
             'entity_type'  => pSQL($entity),
             'status'       => pSQL($result->status()),
             'records_ok'   => $result->updated,
