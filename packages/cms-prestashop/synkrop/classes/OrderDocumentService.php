@@ -136,18 +136,35 @@ class OrderDocumentService
                 }
             }
 
-            $this->updateRow($idOrder, [
-                'status'           => self::STATUS_GENERATED,
-                'bsale_doc_id'     => (int)$resp['id'],
-                'bsale_doc_number' => pSQL((string)($resp['number'] ?? '')),
-                'bsale_doc_url'    => pSQL((string)($resp['urlPdf'] ?? $resp['urlPdfOriginal'] ?? '')),
-                'client_code'      => pSQL($payload['client']['code']),
-                'total_amount'     => (float)($resp['totalAmount'] ?? 0),
-                'skus_hash'        => pSQL($this->skusHash($skus)),
-                'error_details'    => null,
-            ]);
+            // A partir de aca el documento YA existe en Bsale. Si este UPDATE
+            // falla, la fila queda en un estado regenerable y el siguiente ciclo
+            // emite una SEGUNDA nota de venta por el mismo pedido.
+            try {
+                $this->updateRow($idOrder, [
+                    'status'           => self::STATUS_GENERATED,
+                    'bsale_doc_id'     => (int)$resp['id'],
+                    'bsale_doc_number' => pSQL((string)($resp['number'] ?? '')),
+                    'bsale_doc_url'    => pSQL((string)($resp['urlPdf'] ?? $resp['urlPdfOriginal'] ?? '')),
+                    'client_code'      => pSQL($payload['client']['code']),
+                    'total_amount'     => (float)($resp['totalAmount'] ?? 0),
+                    'skus_hash'        => pSQL($this->skusHash($skus)),
+                    'error_details'    => null,
+                ]);
+            } catch (OrderQueueWriteException $e) {
+                $this->markReviewAfterFailedWrite($idOrder, (int)$resp['id'], $e->getMessage());
+
+                return ['ok' => false, 'message' => 'Nota de venta N°' . ($resp['number'] ?? '?')
+                    . ' creada en Bsale pero NO se pudo registrar (pedido ' . $idOrder . '). '
+                    . 'Queda en revision para no duplicarla: ' . $e->getMessage()];
+            }
 
             return ['ok' => true, 'message' => 'Nota de venta N°' . ($resp['number'] ?? '?') . ' creada para pedido ' . $idOrder];
+        } catch (OrderQueueWriteException $e) {
+            // Ni el UPDATE completo ni el minimo de rescate pudieron escribir, con
+            // el documento ya creado en Bsale. Propagar: el catch de abajo dejaria
+            // la fila en 'error', que SI vuelve al ciclo de reintentos y emitiria
+            // una segunda nota de venta.
+            throw $e;
         } catch (Exception $e) {
             // Bsale rechaza la nota de venta por falta de stock (errorCode stk_002).
             // Reintentar automaticamente no sirve: el stock no reaparece solo, y 'error'
@@ -652,16 +669,54 @@ class OrderDocumentService
         return $this->config;
     }
 
+    /**
+     * #115 dejo la leccion sobre esta misma tabla: un UPDATE que falla en
+     * silencio deja la fila en su estado anterior mientras el llamador cree que
+     * grabo. Db::update() devuelve false ante un error (no lanza, salvo con
+     * _PS_DEBUG_SQL_), asi que el unico modo de enterarse es mirar el retorno.
+     *
+     * @throws OrderQueueWriteException Si el UPDATE no se aplico
+     */
     private function updateRow(int $idOrder, array $data): void
     {
         $data['updated_at'] = pSQL(gmdate('Y-m-d H:i:s'));
-        Db::getInstance()->update(
+        $ok = Db::getInstance()->update(
             'synkrop_order_queue',
             $data,
             'id_shop = ' . (int)$this->idShop . ' AND id_order = ' . (int)$idOrder,
             0,
             true // permite NULL (error_details)
         );
+
+        if (!$ok) {
+            throw new OrderQueueWriteException(
+                'No se pudo actualizar synkrop_order_queue para el pedido ' . $idOrder
+                . ' (campos: ' . implode(', ', array_keys($data)) . ')'
+            );
+        }
+    }
+
+    /**
+     * Ultimo recurso cuando el UPDATE completo fallo con el documento YA creado
+     * en Bsale. Escribe lo minimo indispensable para sacar el pedido del ciclo
+     * de reintentos: 'review' no se regenera solo (regenerarlo duplicaria la
+     * nota de venta), a diferencia de 'error'.
+     *
+     * @throws OrderQueueWriteException Si tampoco se puede escribir esto
+     */
+    private function markReviewAfterFailedWrite(int $idOrder, int $bsaleDocId, string $motivo): void
+    {
+        $this->updateRow($idOrder, [
+            'status'        => self::STATUS_REVIEW,
+            'bsale_doc_id'  => $bsaleDocId,
+            // JSON valido siempre — MariaDB con CHECK json_valid rechaza ''
+            'error_details' => pSQL(json_encode([
+                'message' => 'La nota de venta se creo en Bsale (documento ' . $bsaleDocId . ') pero no '
+                    . 'se pudo guardar en la cola. Revisa el documento en Bsale ANTES de reintentar: '
+                    . 'volver a generarlo emitiria una segunda nota de venta por el mismo pedido.',
+                'db'      => $motivo,
+            ])),
+        ]);
     }
 
     /** Hash estable del conjunto de SKUs (correlación nota ↔ documento emitido) */
@@ -703,4 +758,14 @@ class OrderDocumentService
 
         return number_format((float)$num, 0, '', '.') . '-' . $dv;
     }
+}
+
+/**
+ * Un UPDATE sobre synkrop_order_queue que no se aplico. Tiene clase propia
+ * porque createSaleNote() la trata distinto del resto de errores: cuando el
+ * documento ya existe en Bsale, degradar la fila a 'error' la devuelve al ciclo
+ * de reintentos y termina emitiendo una segunda nota de venta.
+ */
+class OrderQueueWriteException extends RuntimeException
+{
 }

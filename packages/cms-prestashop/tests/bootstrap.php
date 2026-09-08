@@ -91,9 +91,20 @@ class Db
         return true;
     }
 
+    /**
+     * Cuantos UPDATE consecutivos (a partir del proximo) deben devolver false.
+     * Db::update() NO lanza ante un error de SQL: devuelve false — que es
+     * justamente lo que hay que poder simular.
+     */
+    public int $updateFailures = 0;
+
     public function update(string $table, array $data, string $where = ''): bool
     {
         $this->calls[] = ['method' => 'update', 'table' => $table, 'data' => $data, 'where' => $where];
+        if ($this->updateFailures > 0) {
+            $this->updateFailures--;
+            return false;
+        }
         return true;
     }
 

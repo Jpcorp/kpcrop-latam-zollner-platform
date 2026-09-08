@@ -381,7 +381,21 @@ class AdminSynkropController extends ModuleAdminController
         $failed    = 0;
         $messages  = [];
         foreach ($targets as $target) {
-            $result = $service->createSaleNote($target);
+            try {
+                $result = $service->createSaleNote($target);
+            } catch (OrderQueueWriteException $e) {
+                // La cola no acepta escrituras y ya hay documentos creados en
+                // Bsale. Cortar el lote: seguir generando dejaria mas pedidos sin
+                // registrar, cada uno candidato a nota de venta duplicada.
+                $this->ajaxDie(json_encode([
+                    'success'   => false,
+                    'generated' => $generated,
+                    'failed'    => $failed + 1,
+                    'message'   => $this->l('Se detuvo la generacion: no se puede escribir en la cola de pedidos.')
+                        . ' ' . $this->l('Revisa en Bsale los documentos del pedido') . ' ' . (int)$target . ' '
+                        . $this->l('antes de reintentar.') . ' ' . $e->getMessage(),
+                ]));
+            }
             if ($result['ok']) {
                 $generated++;
             } else {
@@ -465,7 +479,20 @@ class AdminSynkropController extends ModuleAdminController
         $generated = 0;
         $failed    = 0;
         foreach ($targets as $target) {
-            $result = $service->createSaleNote($target);
+            try {
+                $result = $service->createSaleNote($target);
+            } catch (OrderQueueWriteException $e) {
+                // Igual que en el lote manual: con la cola sin poder escribir, seguir
+                // generando multiplica los pedidos con documento en Bsale y sin registrar.
+                $this->ajaxDie(json_encode([
+                    'success'   => false,
+                    'generated' => $generated,
+                    'failed'    => $failed + 1,
+                    'message'   => $this->l('Se detuvo la generacion automatica: no se puede escribir en la cola.')
+                        . ' ' . $this->l('Revisa en Bsale los documentos del pedido') . ' ' . (int)$target . ' '
+                        . $this->l('antes de reintentar.') . ' ' . $e->getMessage(),
+                ]));
+            }
             $result['ok'] ? $generated++ : $failed++;
         }
 

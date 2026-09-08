@@ -376,4 +376,88 @@ class OrderDocumentServiceTest extends TestCase
         $this->assertStringContainsString('ya procesado', $result['message']);
         $this->assertEmpty(Db::getInstance()->getCalls('update'), 'No debe tocar la fila');
     }
+
+    // ─── El UPDATE que falla en silencio con el documento ya creado en Bsale ──
+    //
+    // Db::update() devuelve false ante un error de SQL, no lanza. Si ese retorno
+    // se descarta, createSaleNote() responde "nota creada" con la fila todavia en
+    // 'pending' — y el siguiente ciclo la vuelve a generar: DOS notas de venta en
+    // Bsale por el mismo pedido. Ya paso algo de esta familia en esta tabla (#115).
+
+    private function bsaleQueCreaElDocumento(int $docId): BsaleApiClient
+    {
+        return new class ('token-test', $docId) extends BsaleApiClient {
+            private $docId;
+            public function __construct(string $token, int $docId = 9001)
+            {
+                parent::__construct($token);
+                $this->docId = $docId;
+            }
+            public function post(string $path, array $data): array
+            {
+                return ['id' => $this->docId, 'number' => 456, 'totalAmount' => 2380];
+            }
+            public function get(string $path, array $params = []): array
+            {
+                return ['items' => [['variant' => ['code' => 'SKU-1']]]];
+            }
+        };
+    }
+
+    public function testUpdateFallidoDejaElPedidoEnReviewYNoEnGenerated(): void
+    {
+        $this->encolarPedidoValido(81);
+        Db::getInstance()->queryResults['synkrop_order_queue'] = ['id_order' => 81, 'status' => 'pending'];
+        Db::getInstance()->updateFailures = 1; // falla el UPDATE que registra el documento
+
+        $result = (new OrderDocumentService($this->bsaleQueCreaElDocumento(9001), 1))->createSaleNote(81);
+
+        $this->assertFalse($result['ok'], 'No puede reportar exito si la fila no se grabo');
+        $this->assertStringContainsString('no duplicarla', $result['message']);
+
+        $updates = Db::getInstance()->getCalls('update');
+        $this->assertCount(2, $updates, 'El UPDATE fallido y el de rescate');
+        $this->assertSame(OrderDocumentService::STATUS_REVIEW, $updates[1]['data']['status']);
+        $this->assertSame(9001, $updates[1]['data']['bsale_doc_id'], 'Hay que poder encontrar el documento en Bsale');
+    }
+
+    public function testUpdateFallidoNuncaDegradaAErrorPorqueErrorSeReintenta(): void
+    {
+        // Esta es LA asercion que impide el duplicado: 'error' vuelve al ciclo de
+        // reintentos (ver el in_array de createSaleNote y el WHERE del modo
+        // automatico); 'review' no. Con el documento ya en Bsale, 'error' duplica.
+        $this->encolarPedidoValido(82);
+        Db::getInstance()->queryResults['synkrop_order_queue'] = ['id_order' => 82, 'status' => 'pending'];
+        // Fallan el UPDATE completo y el de rescate: es el unico camino por el que
+        // la excepcion puede llegar al catch generico y terminar escribiendo 'error'.
+        Db::getInstance()->updateFailures = 2;
+
+        try {
+            (new OrderDocumentService($this->bsaleQueCreaElDocumento(9002), 1))->createSaleNote(82);
+        } catch (OrderQueueWriteException $e) {
+            // Esperado: propaga. Lo que se comprueba abajo es que en el camino
+            // NINGUN update dejo la fila en un estado que se reintente.
+        }
+
+        foreach (Db::getInstance()->getCalls('update') as $u) {
+            $this->assertNotSame(
+                OrderDocumentService::STATUS_ERROR,
+                $u['data']['status'] ?? null,
+                'Con documento creado en Bsale, "error" reintentaria y emitiria una segunda nota de venta'
+            );
+            $this->assertNotSame(OrderDocumentService::STATUS_BACKORDER, $u['data']['status'] ?? null);
+        }
+    }
+
+    public function testSiTampocoSePuedeEscribirElRescateLaExcepcionSePropaga(): void
+    {
+        // Fallan los dos UPDATE. Preferimos que reviente ruidoso a devolver la fila
+        // a un estado regenerable: el lote se corta y alguien mira Bsale.
+        $this->encolarPedidoValido(83);
+        Db::getInstance()->queryResults['synkrop_order_queue'] = ['id_order' => 83, 'status' => 'pending'];
+        Db::getInstance()->updateFailures = 2;
+
+        $this->expectException(OrderQueueWriteException::class);
+        (new OrderDocumentService($this->bsaleQueCreaElDocumento(9003), 1))->createSaleNote(83);
+    }
 }
