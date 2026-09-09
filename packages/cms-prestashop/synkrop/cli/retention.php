@@ -46,8 +46,14 @@ if ($days < 1) {
     exit(1);
 }
 
-echo "=== synkrop retention CLI | " . date('Y-m-d H:i:s') . " | purgando >{$days} dias (lote de {$limit}) ===\n";
+// UTC, igual que created_at en synkrop_log (el servidor no esta en UTC).
+echo "=== synkrop retention CLI | " . gmdate('Y-m-d H:i:s') . " UTC | purgando >{$days} dias (lote de {$limit}) ===\n";
 
-SynkropService::purgeOldLogs($days, $limit);
+try {
+    SynkropService::purgeOldLogs($days, $limit);
+} catch (RuntimeException $e) {
+    fwrite(STDERR, "[ERROR] " . $e->getMessage() . "\n");
+    exit(1);
+}
 
 echo "Completado.\n";

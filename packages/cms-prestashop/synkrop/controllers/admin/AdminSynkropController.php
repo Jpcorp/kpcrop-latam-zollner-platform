@@ -47,7 +47,8 @@ class AdminSynkropController extends ModuleAdminController
         $licenseBanner = null;
         if ($isConfigured) {
             try {
-                $license = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']);
+                $idShop  = (int)$this->context->shop->id;
+                $license = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key'], $idShop);
                 $license->getToken();
             } catch (LicenseException $e) {
                 if ($e->isExpired()) {
@@ -251,7 +252,8 @@ class AdminSynkropController extends ModuleAdminController
             }
         }
 
-        $client = new LicenseClient(SYNKROP_DAEMON_URL, $apiKey); // #99: sin tenantId muerto
+        // #99: sin tenantId muerto
+        $client = new LicenseClient(SYNKROP_DAEMON_URL, $apiKey, (int)$this->context->shop->id);
 
         try {
             $jwt = $client->getToken();
@@ -539,11 +541,13 @@ class AdminSynkropController extends ModuleAdminController
             throw new RuntimeException($this->l('Configura el token de Bsale y la API Key antes de sincronizar.'));
         }
 
+        $idShop         = (int)$this->context->shop->id;
         $decryptedToken = TokenCipher::decrypt($config['bsale_api_token']);
         $bsale          = new BsaleApiClient($decryptedToken);
-        $license        = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']); // #99: sin tenantId muerto
+        // #99: sin tenantId muerto
+        $license        = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key'], $idShop);
 
-        return new SynkropService($bsale, $license, (int)$this->context->shop->id);
+        return new SynkropService($bsale, $license, $idShop);
     }
 
     private function getConfig(): array

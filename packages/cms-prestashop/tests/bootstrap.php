@@ -79,9 +79,20 @@ class Db
         return [];
     }
 
+    /**
+     * Mismo criterio que $updateFailures: Db::execute() devuelve false ante un
+     * error de SQL en vez de lanzar. Se saltan los locks para poder fallar un
+     * DELETE sin romper el GET_LOCK/RELEASE_LOCK de alrededor.
+     */
+    public int $executeFailures = 0;
+
     public function execute(string $sql): bool
     {
         $this->calls[] = ['method' => 'execute', 'sql' => $sql];
+        if ($this->executeFailures > 0 && strpos($sql, '_LOCK(') === false) {
+            $this->executeFailures--;
+            return false;
+        }
         return true;
     }
 
@@ -342,6 +353,35 @@ class Validate
     public static function isLoadedObject($object): bool
     {
         return isset($object->id) && (int)$object->id > 0;
+    }
+}
+
+/**
+ * Solo existe para que un test pueda demostrar que el codigo NO lo usa: el
+ * caching del JWT por tienda debe salir del idShop inyectado, no del Context
+ * (que en el bootstrap CLI siempre resuelve a la tienda por defecto).
+ */
+class ContextShopStub
+{
+    public $id = 1;
+}
+
+class Context
+{
+    public $shop;
+
+    public function __construct()
+    {
+        $this->shop = new ContextShopStub();
+    }
+
+    public static function getContext(): self
+    {
+        static $instance = null;
+        if ($instance === null) {
+            $instance = new self();
+        }
+        return $instance;
     }
 }
 

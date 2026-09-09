@@ -54,7 +54,14 @@ if (!(int)($config['sync_orders'] ?? 0) || !(int)($config['order_auto_mode'] ?? 
 $token   = TokenCipher::decrypt((string)$config['bsale_api_token']);
 $service = new OrderDocumentService(new BsaleApiClient($token), $idShop);
 
-$notified = $service->notifyPendingIfAny();
+try {
+    $notified = $service->notifyPendingIfAny();
+} catch (RuntimeException $e) {
+    // Habia pendientes y el email no salio. Exit 1 para que el cron lo reporte:
+    // antes esto imprimia "Notificado: N" y se veia igual que un envio exitoso.
+    fwrite(STDERR, "[ERROR] " . $e->getMessage() . "\n");
+    exit(1);
+}
 
 if ($notified > 0) {
     echo "[INFO] Notificado: $notified pedido(s) pendiente(s) de autorizar.\n";

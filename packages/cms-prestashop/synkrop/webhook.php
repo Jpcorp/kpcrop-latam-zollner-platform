@@ -217,7 +217,7 @@ try {
     $bsale   = new BsaleApiClient($decryptedToken);
     // #99: LicenseClient ya no toma tenantId — nunca se usaba (la request real
     // solo manda X-API-Key), y el hash md5 no coincidia con licenses.tenant_id.
-    $license = new LicenseClient(SYNKROP_DAEMON_URL, $fullConfig['daemon_api_key']);
+    $license = new LicenseClient(SYNKROP_DAEMON_URL, $fullConfig['daemon_api_key'], 1);
     $service = new SynkropService($bsale, $license, 1);
 
     // #115: send (timestamp del webhook original) permite descartar eventos

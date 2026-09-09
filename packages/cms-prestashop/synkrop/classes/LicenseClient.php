@@ -12,6 +12,13 @@ class LicenseClient
 {
     private $daemonUrl;
     private $apiKey;
+    /**
+     * El JWT se cachea POR TIENDA en synkrop_config. Antes se tomaba de
+     * Context::getContext()->shop->id, que en el bootstrap CLI (config.inc.php
+     * sin init.php) resuelve siempre a la tienda por defecto: `sync.php --shop=2`
+     * pisaba el JWT de la tienda 1 con el de la 2, y la 2 nunca cacheaba nada.
+     */
+    private $idShop;
 
     /**
      * #128: horas de gracia usando el ultimo JWT cacheado (aunque haya
@@ -22,10 +29,11 @@ class LicenseClient
      */
     private const BOT_MIKI_DOWN_GRACE_HOURS = 24;
 
-    public function __construct(string $daemonUrl, string $apiKey)
+    public function __construct(string $daemonUrl, string $apiKey, int $idShop)
     {
         $this->daemonUrl = rtrim($daemonUrl, '/');
         $this->apiKey    = $apiKey;
+        $this->idShop    = $idShop;
     }
 
     /**
@@ -59,7 +67,7 @@ class LicenseClient
     {
         $config = Db::getInstance()->getRow(
             'SELECT license_jwt, license_jwt_expires FROM `' . _DB_PREFIX_ . 'synkrop_config`
-             WHERE id_shop = ' . (int)Context::getContext()->shop->id
+             WHERE id_shop = ' . (int)$this->idShop
         );
 
         if (!$config || empty($config['license_jwt'])) {
@@ -140,7 +148,7 @@ class LicenseClient
                 'license_max_stores'  => isset($data['maxStores']) ? (int)$data['maxStores'] : null,
                 'license_features'    => isset($data['features']) ? pSQL(json_encode($data['features'])) : null,
             ],
-            'id_shop = ' . (int)Context::getContext()->shop->id,
+            'id_shop = ' . (int)$this->idShop,
             0,
             true // permite NULL (branding sin configurar)
         );
@@ -158,7 +166,7 @@ class LicenseClient
     {
         $config = Db::getInstance()->getRow(
             'SELECT license_jwt, license_jwt_expires FROM `' . _DB_PREFIX_ . 'synkrop_config`
-             WHERE id_shop = ' . (int)Context::getContext()->shop->id
+             WHERE id_shop = ' . (int)$this->idShop
         );
 
         if (!$config || empty($config['license_jwt']) || empty($config['license_jwt_expires'])) {

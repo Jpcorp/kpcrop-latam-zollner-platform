@@ -456,6 +456,19 @@ class SynkropServiceTest extends TestCase
         $this->assertStringContainsString('LIMIT 1000', $calls[0]['sql']);
     }
 
+    public function test_purgeOldLogs_lanza_si_el_delete_no_se_ejecuta(): void
+    {
+        // Db::execute() devuelve false ante un lock timeout o un problema de
+        // permisos del usuario MySQL; no lanza. Descartar ese retorno hacia que
+        // retention.php imprimiera "Completado." todas las noches mientras
+        // synkrop_log crecia sin techo.
+        Db::getInstance()->executeFailures = 1;
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/No se pudo purgar/');
+        SynkropService::purgeOldLogs();
+    }
+
     // ─── SyncResult ──────────────────────────────────────────────────────────
 
     public function test_SyncResult_status_success_when_no_failures(): void

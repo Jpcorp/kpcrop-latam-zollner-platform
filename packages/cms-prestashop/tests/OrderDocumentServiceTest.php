@@ -460,4 +460,76 @@ class OrderDocumentServiceTest extends TestCase
         $this->expectException(OrderQueueWriteException::class);
         (new OrderDocumentService($this->bsaleQueCreaElDocumento(9003), 1))->createSaleNote(83);
     }
+
+    // ─── Emails que fallan sin dejar rastro ──────────────────────────────────
+    //
+    // Mail::Send() devuelve false ante un SMTP caido: NO lanza. Los dos catch
+    // que lo envuelven estaban vacios, asi que un cliente podia quedarse sin su
+    // boleta, y el cron imprimir "Notificado: N", sin rastro en ningun lado.
+
+    public function testNotifyPendingIfAnyLanzaSiElMailNoSale(): void
+    {
+        // Aca el email ES la operacion del cron: devolver 5 sin haber enviado
+        // nada era un falso positivo que se veia igual que un envio exitoso.
+        Db::getInstance()->queryResults['synkrop_order_queue'] = 5;
+        Configuration::$values['PS_SHOP_EMAIL'] = 'tienda@test.cl';
+        Mail::$returnValue = false;
+
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessageMatches('/no salio|SMTP/');
+        $this->service->notifyPendingIfAny();
+    }
+
+    public function testCheckEmissionsRegistraElEmailQueNoSalioPeroIgualCierraElPedido(): void
+    {
+        // #128 se mantiene: el fallo de email no bloquea el cierre. Lo que cambia
+        // es que ahora queda anotado en error_details y contado en el resumen.
+        Db::getInstance()->queryResults['synkrop_order_queue'] = [
+            [
+                'id_order'     => 90,
+                'bsale_doc_id' => 7001,
+                'skus_hash'    => sha1('SKU-1'), // findEmittedDocument() correlaciona por este hash
+                'total_amount' => 2380,
+                'client_code'  => 'C1',
+            ],
+        ];
+        Order::$fixtures[90] = ['id_customer' => 60];
+        Customer::$fixtures[60] = ['email' => 'cliente@test.cl', 'firstname' => 'A', 'lastname' => 'B'];
+        Mail::$returnValue = false; // SMTP caido
+
+        $bsale = new class ('token-test') extends BsaleApiClient {
+            public function get(string $path, array $params = []): array
+            {
+                // 1) La nota de venta, para sacar el cliente.
+                if (strpos($path, '/v1/documents/7001.json') !== false) {
+                    return ['client' => ['id' => 555]];
+                }
+                // 2) Los documentos de ese cliente: una boleta posterior a la nota,
+                //    con codeSii (tributaria), mismo total y mismos SKUs.
+                return ['items' => [[
+                    'id'            => 8001,
+                    'number'        => 4242,
+                    'urlPdf'        => 'https://bsale.cl/8001.pdf',
+                    'document_type' => ['id' => 22, 'name' => 'BOLETA ELECTRONICA', 'codeSii' => '39'],
+                    'totalAmount'   => 2380,
+                    'details'       => ['items' => [['variant' => ['code' => 'SKU-1']]]],
+                ]]];
+            }
+        };
+
+        $summary = (new OrderDocumentService($bsale, 1))->checkEmissions();
+
+        $this->assertSame(1, $summary['notify_failed'], 'El email fallido tiene que contarse');
+
+        $conError = array_filter(
+            Db::getInstance()->getCalls('update'),
+            fn($u) => isset($u['data']['error_details']) && $u['data']['error_details'] !== null
+        );
+        $this->assertNotEmpty($conError, 'Debe quedar anotado en error_details, no perderse');
+        // El stub de pSQL() es addslashes(); en produccion MySQL desescapa al
+        // insertar, asi que lo que llega a la columna JSON es este stripslashes.
+        $detalle = json_decode(stripslashes(reset($conError)['data']['error_details']), true);
+        $this->assertIsArray($detalle, 'error_details es columna JSON: json_valid rechaza cualquier otra cosa');
+        $this->assertStringContainsString('email', strtolower($detalle['message']));
+    }
 }

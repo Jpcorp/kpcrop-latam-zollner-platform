@@ -25,15 +25,27 @@ class SynkropService
      * #111: synkrop_log crece sin techo (un INSERT por webhook/sync/cli). No
      * requiere las dependencias de instancia (Bsale/licencia) — pensado para
      * correr desde cli/retention.php via cron del servidor.
+     * Db::execute() devuelve false ante un error (lock timeout, permisos del
+     * usuario MySQL en hosting compartido) en vez de lanzar. Descartar ese
+     * retorno hacia que el cron imprimiera "Completado." todas las noches
+     * mientras synkrop_log crecia sin techo.
+     *
      * @return void
+     * @throws RuntimeException Si el DELETE no se ejecuto
      */
     public static function purgeOldLogs(int $days = 90, int $batchLimit = 5000)
     {
-        Db::getInstance()->execute(
+        $ok = Db::getInstance()->execute(
             'DELETE FROM `' . _DB_PREFIX_ . 'synkrop_log`
              WHERE created_at < (UTC_TIMESTAMP() - INTERVAL ' . (int)$days . ' DAY)
              LIMIT ' . (int)$batchLimit
         );
+
+        if (!$ok) {
+            throw new RuntimeException(
+                'No se pudo purgar synkrop_log (>' . (int)$days . ' dias, lote de ' . (int)$batchLimit . ')'
+            );
+        }
     }
 
     /**

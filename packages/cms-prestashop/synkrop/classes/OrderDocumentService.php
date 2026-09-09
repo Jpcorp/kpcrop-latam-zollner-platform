@@ -390,7 +390,7 @@ class OrderDocumentService
                  AND status = '" . self::STATUS_GENERATED . "'"
             ) ?: [];
 
-            $summary = ['checked' => 0, 'emitted' => 0, 'closed' => 0];
+            $summary = ['checked' => 0, 'emitted' => 0, 'closed' => 0, 'notify_failed' => 0];
 
             foreach ($rows as $row) {
                 $summary['checked']++;
@@ -411,14 +411,32 @@ class OrderDocumentService
                 // #128: notificar al cliente final que su documento esta listo — un
                 // fallo de email nunca debe bloquear el cierre del pedido (ya se
                 // cumplio la parte que importa: el documento se emitio en Bsale).
+                // Pero SI tiene que dejar rastro: Mail::Send() devuelve false ante
+                // un SMTP caido (no lanza), y sin registrarlo el cliente se queda
+                // sin su boleta y nadie se entera nunca.
+                $motivoEmail = null;
                 try {
-                    $this->notifyDocumentEmitted(
+                    $avisado = $this->notifyDocumentEmitted(
                         (int)$row['id_order'],
                         (string)($emitted['number'] ?? ''),
                         (string)($emitted['urlPdf'] ?? '')
                     );
+                    if (!$avisado) {
+                        $motivoEmail = 'Mail::Send() devolvio false (SMTP, pedido sin cliente o sin email)';
+                    }
                 } catch (\Throwable $e) {
-                    // silencioso a proposito — ver comentario arriba
+                    $motivoEmail = get_class($e) . ': ' . $e->getMessage();
+                }
+
+                if ($motivoEmail !== null) {
+                    $summary['notify_failed']++;
+                    $this->updateRow((int)$row['id_order'], [
+                        'error_details' => pSQL(json_encode([
+                            'message' => 'Documento emitido en Bsale, pero NO se pudo avisar al cliente por email. '
+                                . 'El pedido igual se cierra: reenvia el aviso a mano con el link del documento.',
+                            'email'   => $motivoEmail,
+                        ])),
+                    ]);
                 }
 
                 if ($this->closeOrder((int)$row['id_order'])) {
@@ -560,6 +578,7 @@ class OrderDocumentService
      * metodo en si es solo "hay N pendientes, avisa").
      * @return int cantidad de pedidos pendientes notificados (0 si no hay o si
      * la tienda no tiene email configurado)
+     * @throws RuntimeException Si habia pendientes y el email no pudo enviarse
      */
     public function notifyPendingIfAny(): int
     {
@@ -577,10 +596,11 @@ class OrderDocumentService
             return 0;
         }
 
-        // Un fallo de email nunca debe romper el cron (mismo criterio que
-        // notifyDocumentEmitted() en checkEmissions() — el aviso es best-effort).
+        // A diferencia de checkEmissions(), aca el email ES la operacion: si no
+        // sale, el cron no hizo nada y tiene que notarse. Devolver el conteo
+        // igual seria un falso positivo ("Notificado: 5" sin haber enviado nada).
         try {
-            Mail::Send(
+            $enviado = Mail::Send(
                 (int)Configuration::get('PS_LANG_DEFAULT'),
                 'synkrop_orders_pending',
                 'Synkrop: pedidos esperando autorización',
@@ -594,7 +614,18 @@ class OrderDocumentService
                 _PS_MODULE_DIR_ . 'synkrop/mails/'
             );
         } catch (\Throwable $e) {
-            // silencioso a proposito — ver comentario arriba
+            throw new RuntimeException(
+                'No se pudo enviar el aviso de ' . $pending . ' pedido(s) pendiente(s): ' . $e->getMessage(),
+                0,
+                $e
+            );
+        }
+
+        if (!$enviado) {
+            throw new RuntimeException(
+                'Mail::Send() devolvio false: el aviso de ' . $pending . ' pedido(s) pendiente(s) no salio. '
+                . 'Revisa la configuracion SMTP de la tienda.'
+            );
         }
 
         return $pending;

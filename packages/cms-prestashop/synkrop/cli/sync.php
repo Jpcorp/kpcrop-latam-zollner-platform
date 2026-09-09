@@ -138,7 +138,7 @@ echo "=== synkrop CLI | tienda #$idShop | job $jobId | " . gmdate('Y-m-d H:i:s')
 
 $decryptedToken = TokenCipher::decrypt($config['bsale_api_token']);
 $bsale   = new BsaleApiClient($decryptedToken);
-$license = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key']); // #99: sin tenantId muerto
+$license = new LicenseClient(SYNKROP_DAEMON_URL, $config['daemon_api_key'], $idShop); // #99: sin tenantId muerto
 
 if (!$dryRun) {
     try {
