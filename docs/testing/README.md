@@ -1,5 +1,17 @@
 # Estrategia de Testing
 
+## Manuales de esta carpeta
+
+| Manual | Para qué |
+|---|---|
+| [`verificar-fallos-silenciosos.md`](verificar-fallos-silenciosos.md) | Provocar a propósito los fallos que no se ven usando la tienda (email que no sale, purga que falla, nota de venta duplicada, opciones del CLI ignoradas) |
+| [`tutorial-alta-3-tiendas.md`](tutorial-alta-3-tiendas.md) | Procedimiento de alta de varias tiendas contra un solo Bsale |
+| [`manual-multi-tienda.md`](manual-multi-tienda.md) | Probar ese alta por fases, antes de tocar la tienda de un cliente |
+| [`tutorial-e2e-fase1.md`](tutorial-e2e-fase1.md) | Flujo de ventas PS → Bsale de punta a punta |
+| [`tutorial-nivel1-23jul.md`](tutorial-nivel1-23jul.md) | Recorrido manual del backlog Nivel 1 |
+
+Lo de abajo es la estrategia general; los manuales son los procedimientos concretos.
+
 ---
 
 ## Principios
