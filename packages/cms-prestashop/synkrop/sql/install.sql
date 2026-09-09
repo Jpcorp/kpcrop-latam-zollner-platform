@@ -46,6 +46,13 @@ CREATE TABLE IF NOT EXISTS `PREFIX_synkrop_config` (
     `agency_name`           VARCHAR(100) DEFAULT NULL,
     `agency_logo_url`       TEXT,
     `agency_brand_color`    VARCHAR(7) DEFAULT NULL,
+    -- Plan de la licencia, persistido por LicenseClient al refrescar el JWT para
+    -- mostrarlo en el panel sin volver a llamar al daemon. Una tienda instalada
+    -- de cero corre install.sql (no migrate.php), asi que estas 3 columnas TIENEN
+    -- que estar aca o el panel del plan queda sin datos en un alta nueva.
+    `license_plan`          VARCHAR(20) DEFAULT NULL,
+    `license_max_stores`    INT UNSIGNED DEFAULT NULL,
+    `license_features`      TEXT,
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_shop` (`id_shop`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
