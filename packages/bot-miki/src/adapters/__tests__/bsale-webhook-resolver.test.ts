@@ -60,6 +60,48 @@ describe('resolveWebhookResource', () => {
 
       expect(result).toEqual({ topic: 'stock', data: null });
     });
+
+    // ── #136: el resolver toma data[0] sin validar la variante ni sumar ───────
+    // Estos dos van con it.fails() A PROPOSITO: documentan el comportamiento roto
+    // y pasan mientras el bug siga vivo, sin dejar el CI en rojo. Cuando alguien
+    // arregle resolveWebhookResource, EMPIEZAN A FALLAR — ahi hay que sacarles el
+    // `.fails` y quedan como los tests de regresion definitivos.
+
+    it.fails('multi-sucursal: suma el stock de todas las oficinas (hoy toma solo la primera)', async () => {
+      // stocks.json devuelve UNA FILA POR SUCURSAL. El polling ya las suma
+      // (sync-worker.ts, fix #133); el resolver de webhooks no.
+      vi.mocked(mockBsale.get).mockResolvedValueOnce({
+        count: 2,
+        data: [
+          { variantId: 9506, quantityAvailable: 5, quantityReserved: 0, office: { id: 1 } },
+          { variantId: 9506, quantityAvailable: 3, quantityReserved: 0, office: { id: 2 } },
+        ],
+      });
+
+      const result = await resolveWebhookResource(mockBsale, 'stock', '/v2/stocks.json?variantid=9506');
+
+      // Lo correcto es 8 (5 + 3), que es lo que escribiria el polling para la
+      // misma variante. Hoy devuelve 5: el CMS publica el stock de una sucursal.
+      expect((result.data as any)?.quantityAvailable).toBe(8);
+    });
+
+    it.fails('descarta la coleccion si la variante no es la que pidio el resourceUrl', async () => {
+      // Si el filtro se ignora, Bsale devuelve la coleccion entera y data[0] es
+      // una variante cualquiera del catalogo. El resolver la despacha igual y el
+      // plugin le escribe el stock — a la variante equivocada, sin un solo error.
+      vi.mocked(mockBsale.get).mockResolvedValueOnce({
+        count: 2983,
+        data: [
+          { variantId: 9506, quantityAvailable: 0, quantityReserved: 0 },
+          { variantId: 8721, quantityAvailable: 42, quantityReserved: 0 },
+        ],
+      });
+
+      const result = await resolveWebhookResource(mockBsale, 'stock', '/v2/stocks.json?variantid=8721');
+
+      // Se pidio la 8721: devolver la 9506 es peor que no devolver nada.
+      expect((result.data as any)?.variant.id).not.toBe(9506);
+    });
   });
 
   describe('topic=variant', () => {
