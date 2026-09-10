@@ -39,7 +39,11 @@ Los valores sensibles (API Keys, secrets) estan en `secrets.md` (excluido del re
 
 | tenantId | Plan | Stores | Creado | Notas |
 |---|---|---|---|---|
-| `tienda-zollner-cl` | growth | max 3 | 2026-05-31 | Primer cliente — onboarding pendiente |
+| `allgrano-cl` | growth | max 3 | 2026-05-31 | 2 de 3 usadas: `strainmachine.com` (cpnId 131288, lista 1) y `semillasdecanamo.cl` (mismo cpnId, lista 4) |
+
+> El tenant se llama `allgrano-cl`. Antes esta tabla decia `tienda-zollner-cl`, que no existe
+> en produccion y devuelve `TENANT_NOT_FOUND`. No hay endpoint que liste tenants: si perdes el
+> id, sale de `GET /v1/admin/observability` (campo `tenant_id` de cada evento).
 
 ## Plugin PrestaShop — Valores de configuracion
 
